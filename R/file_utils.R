@@ -376,7 +376,11 @@ add_Y_residuals <- function(data_list, conditions, scale_residuals = FALSE) {
   # Compute residuals, their mean, and standard deviation, and add them to data_list
   data_list <- data_list %>%
     mutate(
-      lm_res = map2(Y, covar, ~ .lm.fit(x = cbind(1, .y), y = .x)$residuals %>% as.matrix()),
+      lm_res = map2(Y, covar, ~ {
+        res <- .lm.fit(x = cbind(1, .y), y = .x)$residuals %>% as.matrix()
+        colnames(res) <- colnames(.x)
+        res
+      }),
       Y_resid_mean = map(lm_res, ~ apply(.x, 2, mean)),
       Y_resid_sd = map(lm_res, ~ apply(.x, 2, sd)),
       Y_resid = map(lm_res, ~ {
