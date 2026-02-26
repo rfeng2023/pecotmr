@@ -52,6 +52,7 @@ Suggests:
     qgg,
     quadprog,
     quantreg,
+    XICOR,    
     qvalue,
     rmarkdown,
     snpStats,
