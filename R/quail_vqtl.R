@@ -99,7 +99,7 @@ univariate_regression <- function(X, y, Z = NULL, center = TRUE,
 #' phenotype <- rnorm(1000)
 #' results <- run_linear_regression1(genotype, phenotype)
 #' @noRd
-run_linear_regression <- function(genotype, phenotype, covariates = NULL) {
+run_linear_regression <- function(genotype, phenotype, covariates = NULL, phenotype_id = NULL) {
   if (!is.null(covariates)) {
     covariates <- as.data.frame(lapply(covariates, as.numeric))
   }
@@ -115,11 +115,12 @@ run_linear_regression <- function(genotype, phenotype, covariates = NULL) {
   snp_info <- lapply(colnames(genotype), parse_snp_info)
 
   data.frame(
+    phenotype_id = if (!is.null(phenotype_id)) phenotype_id else NA,
     chr = sapply(snp_info, function(x) x$chr),
     pos = sapply(snp_info, function(x) x$pos),
-    variant_id = colnames(genotype),
     alt = sapply(snp_info, function(x) x$alt),
-    ref = sapply(snp_info, function(x) x$ref),
+    ref = sapply(snp_info, function(x) x$ref),    
+    variant_id = colnames(genotype),
     beta = reg_results$betahat,
     se = reg_results$sebetahat,
     z = reg_results$z_scores,
@@ -143,7 +144,7 @@ run_linear_regression <- function(genotype, phenotype, covariates = NULL) {
 #' results <- QUAIL_pipeline(genotype, rank_score, covariates = covariates)
 #' }
 QUAIL_pipeline <- function(genotype, rank_score, phenotype = NULL,
-                           covariates = NULL) {
+                           covariates = NULL, phenotype_id = NULL) {
   start_time <- Sys.time()
 
   # Validate rank_score
@@ -160,7 +161,7 @@ QUAIL_pipeline <- function(genotype, rank_score, phenotype = NULL,
   }
 
   # Perform vQTL analysis
-  vqtl_results <- run_linear_regression(genotype, rank_score, covariates)
+  vqtl_results <- run_linear_regression(genotype, rank_score, covariates, phenotype_id = phenotype_id)
 
   end_time <- Sys.time()
   cat("\nTotal vQTL runtime:", round(difftime(end_time, start_time, units = "secs"), 2), " seconds\n")
