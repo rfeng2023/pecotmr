@@ -1,6 +1,6 @@
 #ifndef QTL_ENRICHMENT_HPP
 #define QTL_ENRICHMENT_HPP
-#include <RcppArmadillo.h> // need to include this before RcppGSL otherwise it complains about conflicts
+#include <RcppArmadillo.h>
 #include <vector>
 #include <string>
 #include <map>

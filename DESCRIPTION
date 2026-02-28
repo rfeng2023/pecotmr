@@ -59,8 +59,7 @@ Suggests:
     testthat
 LinkingTo:
     Rcpp,
-    RcppArmadillo,
-    RcppGSL
+    RcppArmadillo
 NeedsCompilation: yes
 VignetteBuilder: knitr
 RoxygenNote: 7.3.3
