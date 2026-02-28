@@ -26,27 +26,27 @@ generate_dentist_data <- function(seed=42, n_snps = 100, sample_size = 100, n_ou
 test_that("Test dentist works", {
     data <- generate_dentist_data()
     # Output length may be slightly less than input due to correct iterative filtering
-    expect_warning(res <- dentist(data$sumstat, data$LD_mat, data$nSample))
+    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample))
     expect_true(length(res$imputed_z) > 0 && length(res$imputed_z) <= 100)
 })
 
 test_that("Test dentist works correct_chen_et_al_bug = F", {
     data <- generate_dentist_data()
     # Output length may be slightly less than input due to correct iterative filtering
-    expect_warning(res <- dentist(data$sumstat, data$LD_mat, data$nSample, correct_chen_et_al_bug = F))
+    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = F))
     expect_true(length(res$imputed_z) > 0 && length(res$imputed_z) <= 100)
 })
 
 test_that("Test dentist stops when missing position", {
     data <- generate_dentist_data()
     colnames(data$sumstat) <- c("something", "z")
-    expect_error(dentist(data$sumstat, data$LD_mat, data$nSample, correct_chen_et_al_bug = F))
+    expect_error(dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = F))
 })
 
 test_that("Test dentist stops when missing zscore", {
     data <- generate_dentist_data()
     colnames(data$sumstat) <- c("position", "something")
-    expect_error(dentist(data$sumstat, data$LD_mat, data$nSample, correct_chen_et_al_bug = F))
+    expect_error(dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = F))
 })
 
 generate_dentist_single_window_data <- function(seed=42, n_snps = 100, sample_size = 100, n_outliers = 5) {
@@ -68,22 +68,22 @@ generate_dentist_single_window_data <- function(seed=42, n_snps = 100, sample_si
 
 test_that("Test dentist_single_window works", {
     data <- generate_dentist_single_window_data()
-    expect_warning(expect_equal(length(dentist_single_window(data$z_scores, data$LD_mat, data$nSample)$original_z), 100))
+    expect_warning(expect_equal(length(dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample)$original_z), 100))
 })
 
 test_that("Test dentist_single_window warning when < 2000 variants", {
     data <- generate_dentist_single_window_data()
-    expect_warning(dentist_single_window(data$z_scores, data$LD_mat, data$nSample))
+    expect_warning(dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample))
 })
 
 test_that("Test dentist_single_window works < 1.0 duprThreshold", {
     data <- generate_dentist_single_window_data()
-    expect_warning(expect_equal(length(dentist_single_window(data$z_scores, data$LD_mat, data$nSample, duprThreshold = 0.99)$original_z), 100))
+    expect_warning(expect_equal(length(dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample, duprThreshold = 0.99)$original_z), 100))
 })
 
 test_that("Test dentist_single_window stops with zscore/LD matrix dimension mismatch", {
     data <- generate_dentist_single_window_data()
-    expect_warning(expect_error(dentist_single_window(generate_dentist_single_window_data()$z_scores, generate_dentist_single_window_data(n_snps = 80)$LD_mat, data$nSample)))
+    expect_warning(expect_error(dentist_single_window(generate_dentist_single_window_data()$z_scores, R = generate_dentist_single_window_data(n_snps = 80)$LD_mat, nSample = data$nSample)))
 })
 
 #add_dups_back_dentist <- function(zScore, dentist_output, find_dup_output) {
@@ -117,7 +117,7 @@ generate_add_dups_back_dentist_data <- function(seed=42, n_snps = 1000, sample_s
     z_scores <- find_dup_output$filteredZ
     ld_matrix <- find_dup_output$filteredLD
     print(find_dup_output$dupBearer)
-    dentist_output <- dentist_single_window(z_scores, ld_matrix, sample_size)
+    dentist_output <- dentist_single_window(z_scores, R = ld_matrix, nSample = sample_size)
 
     return(list(z_scores = org_z_scores, dentist_output = dentist_output, find_dup_output = find_dup_output))
 }
@@ -182,25 +182,16 @@ test_that("Test add_dups_back_dentist stops when zScore and find_dup_output nrow
     expect_error(add_dups_back_dentist(z_scores, dentist_output, find_dup_output))
 })
 
-test_that("Test divide_into_windows works", {
-    res <- divide_into_windows(seq(2000000,5000000,100000), 2000000, F)
-    expect_equal(nrow(res), 2)
-})
-
-test_that("Test divide_into_windows works window_size <= 0", {
-    res <- divide_into_windows(seq(2000000,5000000,100000), 0, F)
-    expect_equal(nrow(res), 1)
-})
-
-test_that("Test divide_into_windows works correct_chen_et_al_bug", {
-    res <- divide_into_windows(seq(2000000,5000000,100000), 2000000, T)
-    expect_equal(nrow(res), 2)
+test_that("Test segment_by_dist works", {
+    # Use min_dim=10 since we only have 31 positions
+    res <- segment_by_dist(seq(2000000,5000000,100000), max_dist = 2000000, min_dim = 10)
+    expect_true(nrow(res) >= 1)
 })
 
 #merge_windows <- function(dentist_result_by_window, window_divided_res) {
 test_that("Test merge_windows works", {
     data <- generate_dentist_data(n_snps = 1000, sample_size = 1000, start_pos = 0, end_pos = 2000)
-    window_divided_res <- divide_into_windows(data$sumstat$position, window_size = 1000, correct_chen_et_al_bug = TRUE)
+    window_divided_res <- segment_by_dist(data$sumstat$position, max_dist = 1000, min_dim = 10)
     pValueThreshold <- 5.0369e-8
     propSVD <- 0.4
     gcControl <- FALSE
@@ -208,21 +199,18 @@ test_that("Test merge_windows works", {
     gPvalueThreshold <- 0.05
     duprThreshold <- 0.99
     ncpus <- 1
-    seed <- 999
     correct_chen_et_al_bug <- TRUE
     dentist_result_by_window <- list()
     suppressWarnings({
         for (k in 1:nrow(window_divided_res)) {
-        zScore_k <- data$sumstat$z[window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]]
-        LD_mat_k <- data$LD_mat[
-            window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k],
-            window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]
-        ]
+        idx_range <- window_divided_res$windowStartIdx[k]:(window_divided_res$windowEndIdx[k] - 1L)
+        zScore_k <- data$sumstat$z[idx_range]
+        LD_mat_k <- data$LD_mat[idx_range, idx_range]
         dentist_result_by_window[[k]] <- dentist_single_window(
-            zScore_k, LD_mat_k, 100,
-            pValueThreshold, propSVD, gcControl,
-            nIter, gPvalueThreshold, duprThreshold,
-            ncpus, seed, correct_chen_et_al_bug
+            zScore_k, R = LD_mat_k, nSample = 100,
+            pValueThreshold = pValueThreshold, propSVD = propSVD, gcControl = gcControl,
+            nIter = nIter, gPvalueThreshold = gPvalueThreshold, duprThreshold = duprThreshold,
+            ncpus = ncpus, correct_chen_et_al_bug = correct_chen_et_al_bug
         )
         }
     })

@@ -173,7 +173,7 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
     LD_mat_qc <- qc_results$LD_mat
     outlier_number <- qc_results$outlier_number
   } else if (method == "dentist") {
-    qc_results <- dentist_single_window(sumstats$z, LD_extract, nSample = n, duprThreshold = 0.99)
+    qc_results <- dentist_single_window(sumstats$z, R = LD_extract, nSample = n, duprThreshold = 0.99)
     keep_index <- qc_results %>%
       mutate(index = row_number()) %>%
       filter(!outlier) %>%
@@ -182,7 +182,7 @@ summary_stats_qc <- function(sumstats, LD_data, n = NULL, var_y = NULL, method =
     LD_mat_qc <- LD_extract[sumstats_qc$variant_id, sumstats_qc$variant_id, drop = FALSE]
     outlier_number <- nrow(sumstats) - nrow(sumstats_qc)
   } else if (method == "slalom") {
-    qc_results <- slalom(zScore = sumstats$z, LD_mat = LD_extract)
+    qc_results <- slalom(zScore = sumstats$z, R = LD_extract)
     keep_index <- qc_results$data %>%
       mutate(index = row_number()) %>%
       filter(!outliers) %>%

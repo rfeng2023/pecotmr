@@ -6,8 +6,9 @@
 \usage{
 dentist_single_window(
   zScore,
-  LD_mat,
-  nSample,
+  R = NULL,
+  X = NULL,
+  nSample = NULL,
   pValueThreshold = 5e-08,
   propSVD = 0.4,
   gcControl = FALSE,
@@ -15,78 +16,48 @@ dentist_single_window(
   gPvalueThreshold = 0.05,
   duprThreshold = 0.99,
   ncpus = 1,
-  seed = 999,
-  correct_chen_et_al_bug = TRUE,
-  match_original = FALSE
+  correct_chen_et_al_bug = TRUE
 )
 }
 \arguments{
-\item{zScore}{A numeric vector containing the z-score values for variants within the window.}
+\item{zScore}{Numeric vector of z-scores.}
 
-\item{LD_mat}{A square matrix containing linkage disequilibrium (LD) information for variants within the window.}
+\item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
 
-\item{nSample}{The total number of samples.}
+\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
+\code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.}
 
-\item{pValueThreshold}{The p-value threshold for significance. Default is 5e-8.}
+\item{nSample}{Number of samples. Required when \code{R} is provided; inferred
+from \code{X} when \code{X} is provided.}
 
-\item{propSVD}{The proportion of singular value decomposition (SVD) to use. Default is 0.4.}
+\item{pValueThreshold}{P-value threshold for outlier detection. Default is 5e-8.}
 
-\item{gcControl}{Logical indicating whether genomic control should be applied. Default is FALSE.}
+\item{propSVD}{SVD truncation proportion. Default is 0.4.}
 
-\item{nIter}{The number of iterations for the Dentist algorithm. Default is 10.}
+\item{gcControl}{Logical; apply genomic control. Default is FALSE.}
 
-\item{gPvalueThreshold}{The genomic p-value threshold for significance. Default is 0.05.}
+\item{nIter}{Number of iterations. Default is 10.}
 
-\item{duprThreshold}{The absolute correlation r value threshold to be considered duplicate. Default is 0.99.}
+\item{gPvalueThreshold}{Grouping p-value threshold. Default is 0.05.}
 
-\item{ncpus}{The number of CPU cores to use for parallel processing. Default is 1.}
+\item{duprThreshold}{Duplicate r-squared threshold. Default is 0.99.}
 
-\item{seed}{The random seed for reproducibility. Default is 999.}
+\item{ncpus}{Number of CPU cores. Default is 1.}
 
-\item{correct_chen_et_al_bug}{Logical indicating whether to correct the Chen et al. bug. Default is TRUE.}
+\item{correct_chen_et_al_bug}{Correct the original DENTIST operator! bug. Default is TRUE.}
 }
 \value{
-data frame includes columns representing the imputed summary statistics and outlier detected.
+Data frame with columns: original_z, imputed_z, iter_to_correct, rsq,
+  is_duplicate, outlier_stat, outlier.
 }
 \description{
-This function performs imputation of summary statistics for a single genomic window
-using the Dentist algorithm.
-}
-\examples{
-# Example usage of dentist_impute_single_window
-library(MASS)
-library(corpcor)
-set.seed(999)
-# Set the number of SNPs, sample size, and number of outliers
-n_snps <- 1000
-sample_size <- 10000
-n_outliers <- 5
-
-# Generate a correlation matrix with more off-diagonal correlation
-cor_matrix <- matrix(0, nrow = n_snps, ncol = n_snps)
-for (i in 1:(n_snps - 1)) {
-  for (j in (i + 1):n_snps) {
-    cor_matrix[i, j] <- runif(1, 0.2, 0.8) # Generate random correlations between 0.2 and 0.8
-    cor_matrix[j, i] <- cor_matrix[i, j]
-  }
-}
-diag(cor_matrix) <- 1
-
-# Convert the correlation matrix to a positive definite matrix
-ld_matrix <- cov2cor(make.positive.definite(cor_matrix))
-
-# Simulate Z-scores based on the LD matrix
-z_scores <- mvrnorm(n = 1, mu = rep(0, n_snps), Sigma = ld_matrix)
-
-# Introduce outliers
-outlier_indices <- sample(1:n_snps, n_outliers)
-z_scores[outlier_indices] <- rnorm(n_outliers, mean = 0, sd = 5)
-dentist_single_window(zScore, LD_mat, nSample)
-
+Detect outliers in GWAS summary statistics using LD-based iterative imputation.
+Provide either an LD correlation matrix \code{R} or a genotype matrix \code{X}
+(from which LD and sample size are derived automatically).
 }
 \references{
-https://github.com/Yves-CHEN/DENTIST
+\url{https://github.com/Yves-CHEN/DENTIST}
 }
 \seealso{
-\code{\link{dentist}} for detecting outliers using the Dentist algorithm.
+\code{\link{dentist}}, \code{\link{slalom}}
 }

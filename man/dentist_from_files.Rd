@@ -16,11 +16,9 @@ dentist_from_files(
   gPvalueThreshold = 0.05,
   duprThreshold = 0.99,
   ncpus = 1,
-  seed = 999,
   correct_chen_et_al_bug = TRUE,
-  match_original = FALSE,
-  use_original_windowing = FALSE,
   min_dim = 2000,
+  match_binary_LD = FALSE,
   verbose = TRUE
 )
 }
@@ -49,15 +47,13 @@ tab-separated, 8 columns with header: SNP A1 A2 freq beta se p N). May be gzippe
 
 \item{ncpus}{Number of CPU threads. Default is 1.}
 
-\item{seed}{Random seed. Default is 999.}
-
 \item{correct_chen_et_al_bug}{Logical; correct known bugs in original DENTIST. Default is TRUE.}
 
-\item{match_original}{Logical; use original DENTIST RNG and seed values. Default is FALSE.}
+\item{min_dim}{Minimum number of SNPs per window. Default is 2000.}
 
-\item{use_original_windowing}{Logical; use original DENTIST C++ windowing algorithm. Default is FALSE.}
-
-\item{min_dim}{Minimum number of SNPs per window (for original windowing). Default is 2000.}
+\item{match_binary_LD}{Logical; use GCTA-style LD computation and raw B-allele
+counts to match the DENTIST binary's exact floating-point behavior. Requires
+snpStats. Default is FALSE.}
 
 \item{verbose}{Logical; print progress messages. Default is TRUE.}
 }

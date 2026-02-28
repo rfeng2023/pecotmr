@@ -1,8 +1,9 @@
 // Rcpp implementation of the DENTIST method (Chen et al.)
 // https://github.com/Yves-CHEN/DENTIST/tree/master#Citations
 //
-// When match_original=TRUE, this code reproduces the original DENTIST binary's
-// algorithm and logic exactly, matching to machine precision (~1e-15).
+// This code reproduces the original DENTIST binary's algorithm and logic
+// exactly, matching to machine precision (~1e-15), when using the same
+// RNG seeds, Eigen eigendecomposition, and GCTA-style LD computation.
 #include <RcppArmadillo.h>
 #include <RcppEigen.h>
 #include <omp.h> // Required for parallel processing
@@ -122,9 +123,17 @@ arma::mat compute_LD_gcta_cpp(const Rcpp::NumericMatrix& X, int ncpus = 1) {
 	return LD;
 }
 
-// Original DENTIST RNG: uses srand/rand + sort-by-random-values to produce a permutation.
-// This matches the original C++ implementation exactly.
-std::vector<size_t> generateSetOfNumbers_original(size_t size, unsigned int seed) {
+// DENTIST RNG: uses srand/rand + sort-by-random-values to produce a permutation.
+// This faithfully reproduces the original DENTIST C++ binary's random partitioning.
+//
+// A simpler modern alternative would be:
+//   std::vector<size_t> indexes(size);
+//   std::iota(indexes.begin(), indexes.end(), 0);
+//   std::mt19937 gen(seed);
+//   std::shuffle(indexes.begin(), indexes.end(), gen);
+//   return indexes;
+// However, using the original RNG ensures exact reproducibility with the binary.
+std::vector<size_t> generateSetOfNumbers(size_t size, unsigned int seed) {
 	std::vector<int> numbers(size, 0);
 	srand(seed);
 	numbers[0] = rand();
@@ -144,24 +153,6 @@ std::vector<size_t> generateSetOfNumbers_original(size_t size, unsigned int seed
 		return numbers[i1] < numbers[i2];
 	});
 	return idx;
-}
-
-// Modern RNG using mt19937 + shuffle (our improved version)
-std::vector<size_t> generateSetOfNumbers_modern(size_t size, unsigned int seed) {
-	std::vector<size_t> indexes(size);
-	std::iota(indexes.begin(), indexes.end(), 0);
-	std::mt19937 gen(seed);
-	std::shuffle(indexes.begin(), indexes.end(), gen);
-	return indexes;
-}
-
-// Dispatch based on whether we want to match original DENTIST behavior
-std::vector<size_t> generateSetOfNumbers(size_t size, unsigned int seed, bool match_original) {
-	if (match_original) {
-		return generateSetOfNumbers_original(size, seed);
-	} else {
-		return generateSetOfNumbers_modern(size, seed);
-	}
 }
 
 // Get a quantile value
@@ -214,12 +205,15 @@ double minusLogPvalueChisq2(double stat) {
 }
 
 // Perform one iteration of the algorithm, assuming LD_mat is an arma::mat.
-// When match_original=true, uses Eigen's SelfAdjointEigenSolver (same as the
-// original DENTIST C++ binary) for numerically identical eigendecomposition.
-// When match_original=false, uses Armadillo's eig_sym (LAPACK-based).
+// Uses Eigen's SelfAdjointEigenSolver (same as the original DENTIST C++ binary)
+// for numerically identical eigendecomposition.
+//
+// An alternative would be to use Armadillo's eig_sym (LAPACK-based), but even
+// tiny numerical differences cascade through iterative filtering, causing
+// completely different results after iteration 1.
 void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const std::vector<size_t>& idx2,
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
-                  size_t nSample, float probSVD, int ncpus, bool match_original, bool verbose) {
+                  size_t nSample, float probSVD, int ncpus, bool verbose) {
 	if (verbose) {
 		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
 		Rcpp::Rcout << "idx size: " << idx.size() << std::endl;
@@ -251,12 +245,7 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
 		}
 	}
 
-	if (match_original) {
-		if (verbose) Rcpp::Rcout << "Using Eigen SelfAdjointEigenSolver (match_original=true)" << std::endl;
-		// Use Eigen's SelfAdjointEigenSolver to match the original DENTIST binary exactly.
-		// The binary uses Eigen for eigendecomposition; even tiny numerical differences
-		// from Armadillo's LAPACK-based eig_sym cascade through the iterative filtering,
-		// causing completely different results after iteration 1.
+	{
 		Eigen::MatrixXd LD_it_e(idx2.size(), idx.size());
 		Eigen::VectorXd zScore_eigen_e(idx.size());
 		Eigen::MatrixXd VV_e(idx.size(), idx.size());
@@ -331,79 +320,6 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
 			if (denom_sq < 1e-8) denom_sq = 1e-8;
 			zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(denom_sq);
 		}
-	} else {
-		// Use Armadillo's LAPACK-based eig_sym (default path)
-		arma::vec zScore_eigen_a(idx.size());
-		arma::mat LD_it_a(idx2.size(), idx.size());
-		arma::mat VV_a(idx.size(), idx.size());
-
-#pragma omp parallel for collapse(2)
-		for (size_t i = 0; i < idx2.size(); i++) {
-			for (size_t k = 0; k < idx.size(); k++) {
-				LD_it_a(i, k) = LD_mat(idx2[i], idx[k]);
-			}
-		}
-
-#pragma omp parallel for
-		for (size_t i = 0; i < idx.size(); i++) {
-			zScore_eigen_a(i) = zScore[idx[i]];
-			for (size_t j = 0; j < idx.size(); j++) {
-				VV_a(i, j) = LD_mat(idx[i], idx[j]);
-			}
-		}
-
-		arma::vec eigval;
-		arma::mat eigvec;
-		arma::eig_sym(eigval, eigvec, VV_a);
-
-		int nRank = eigvec.n_rows;
-		int nZeros = arma::sum(eigval < 0.0001);
-		nRank -= nZeros;
-		K = std::min(K, static_cast<size_t>(nRank));
-
-		if (verbose) {
-			Rcpp::Rcout << "Rank: " << nRank << ", Zeros: " << nZeros << ", K: " << K << std::endl;
-		}
-
-		if (K <= 1) {
-			if (verbose) {
-				Rcpp::Rcout << "Warning: Rank of eigen matrix <= 1 (K=" << K
-				            << "), skipping imputation for this partition" << std::endl;
-			}
-			Rcpp::warning("Rank of eigen matrix <= 1, skipping imputation for this partition");
-			for (size_t i = 0; i < idx2.size(); ++i) {
-				imputedZ[idx2[i]] = 0.0;
-				rsqList[idx2[i]] = 0.0;
-				zScore_e[idx2[i]] = 0.0;
-			}
-			return;
-		}
-
-		arma::mat ui_a = arma::eye<arma::mat>(eigvec.n_rows, K);
-		arma::mat wi_a = arma::eye<arma::mat>(K, K);
-		for (size_t m = 0; m < K; ++m) {
-			int j = eigvec.n_rows - m - 1;
-			ui_a.col(m) = eigvec.col(j);
-			wi_a(m, m) = 1.0 / eigval(j);
-		}
-
-		arma::mat beta_a = LD_it_a * ui_a * wi_a;
-		arma::vec zScore_eigen_imp_a = beta_a * (ui_a.t() * zScore_eigen_a);
-		arma::mat product_a = beta_a * (ui_a.t() * LD_it_a.t());
-		arma::vec rsq_eigen_a = product_a.diag();
-
-#pragma omp parallel for
-		for (size_t i = 0; i < idx2.size(); ++i) {
-			imputedZ[idx2[i]] = zScore_eigen_imp_a(i);
-			rsqList[idx2[i]] = std::min(rsq_eigen_a(i), 1.0);
-			if (rsq_eigen_a(i) >= 1) {
-				Rcpp::warning("Adjusted rsq_eigen value exceeding 1: " + std::to_string(rsq_eigen_a(i)));
-			}
-			size_t j = idx2[i];
-			double denom_sq = LD_mat(j, j) - rsqList[j];
-			if (denom_sq < 1e-8) denom_sq = 1e-8;
-			zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(denom_sq);
-		}
 	}
 }
 
@@ -424,7 +340,6 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
  * @param nIter The number of iterations to run the DENTIST algorithm.
  * @param gPvalueThreshold P-value threshold for grouping variants into significant and null categories.
  * @param ncpus The number of CPU cores to use for parallel processing.
- * @param seed Seed for random number generation, affecting the selection of variants for analysis.
  * @param verbose A boolean flag to enable verbose output for debugging.
  *
  * @return A List object containing:
@@ -440,8 +355,8 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
 // [[Rcpp::export]]
 List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arma::vec& zScore,
                               double pValueThreshold, float propSVD, bool gcControl, int nIter,
-                              double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug,
-                              bool match_original = false, bool verbose = false) {
+                              double gPvalueThreshold, int ncpus, bool correct_chen_et_al_bug,
+                              bool verbose = false) {
 	if (verbose) {
 		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
 		Rcpp::Rcout << "nSample: " << nSample << std::endl;
@@ -452,7 +367,6 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 		Rcpp::Rcout << "nIter: " << nIter << std::endl;
 		Rcpp::Rcout << "gPvalueThreshold: " << gPvalueThreshold << std::endl;
 		Rcpp::Rcout << "ncpus: " << ncpus << std::endl;
-		Rcpp::Rcout << "seed: " << seed << std::endl;
 		Rcpp::Rcout << "correct_chen_et_al_bug: " << correct_chen_et_al_bug << std::endl;
 	}
 
@@ -463,8 +377,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 
 	size_t markerSize = zScore.size();
 	// Original DENTIST hardcodes seed=10 for initial partitioning
-	unsigned int init_seed = match_original ? 10 : seed;
-	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, init_seed, match_original);
+	std::vector<size_t> randOrder = generateSetOfNumbers(markerSize, 10);
 	std::vector<size_t> idx, idx2;
 	idx.reserve(markerSize / 2);
 	idx2.reserve(markerSize / 2);
@@ -508,7 +421,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 			Rcpp::Rcout << "Performing oneIteration()" << std::endl;
 		}
 
-		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, match_original, verbose);
+		oneIteration(LD_mat, idx, idx2, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
 
 		diff.resize(idx2.size());
 		grouping_tmp.resize(idx2.size());
@@ -586,7 +499,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 			Rcpp::Rcout << "Performing oneIteration() with updated sets of indices" << std::endl;
 		}
 
-		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, match_original, verbose);
+		oneIteration(LD_mat, idx2_QCed, idx, zScore, imputedZ, rsq, zScore_e, nSample, propSVD, ncpus, verbose);
 
 		if (verbose) {
 			Rcpp::Rcout << "Recalculating differences and groupings after the iteration" << std::endl;
@@ -699,8 +612,7 @@ List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arm
 			break;
 		}
 		// Original DENTIST uses seed = 20000 + t*20000 for subsequent iterations
-		unsigned int iter_seed = match_original ? (20000 + t * 20000) : (seed + t * seed);
-		randOrder = generateSetOfNumbers(fullIdx.size(), iter_seed, match_original);
+		randOrder = generateSetOfNumbers(fullIdx.size(), 20000 + t * 20000);
 		idx.clear();
 		idx2.clear();
 		for (size_t i = 0; i < fullIdx.size(); ++i) {

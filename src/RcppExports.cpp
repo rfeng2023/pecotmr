@@ -26,8 +26,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // dentist_iterative_impute
-List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, int seed, bool correct_chen_et_al_bug, bool match_original, bool verbose);
-RcppExport SEXP _pecotmr_dentist_iterative_impute(SEXP LD_matSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP seedSEXP, SEXP correct_chen_et_al_bugSEXP, SEXP match_originalSEXP, SEXP verboseSEXP) {
+List dentist_iterative_impute(const arma::mat& LD_mat, size_t nSample, const arma::vec& zScore, double pValueThreshold, float propSVD, bool gcControl, int nIter, double gPvalueThreshold, int ncpus, bool correct_chen_et_al_bug, bool verbose);
+RcppExport SEXP _pecotmr_dentist_iterative_impute(SEXP LD_matSEXP, SEXP nSampleSEXP, SEXP zScoreSEXP, SEXP pValueThresholdSEXP, SEXP propSVDSEXP, SEXP gcControlSEXP, SEXP nIterSEXP, SEXP gPvalueThresholdSEXP, SEXP ncpusSEXP, SEXP correct_chen_et_al_bugSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -40,11 +40,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type nIter(nIterSEXP);
     Rcpp::traits::input_parameter< double >::type gPvalueThreshold(gPvalueThresholdSEXP);
     Rcpp::traits::input_parameter< int >::type ncpus(ncpusSEXP);
-    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< bool >::type correct_chen_et_al_bug(correct_chen_et_al_bugSEXP);
-    Rcpp::traits::input_parameter< bool >::type match_original(match_originalSEXP);
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(dentist_iterative_impute(LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug, match_original, verbose));
+    rcpp_result_gen = Rcpp::wrap(dentist_iterative_impute(LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, correct_chen_et_al_bug, verbose));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -143,7 +141,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_pecotmr_compute_LD_gcta_cpp", (DL_FUNC) &_pecotmr_compute_LD_gcta_cpp, 2},
-    {"_pecotmr_dentist_iterative_impute", (DL_FUNC) &_pecotmr_dentist_iterative_impute, 13},
+    {"_pecotmr_dentist_iterative_impute", (DL_FUNC) &_pecotmr_dentist_iterative_impute, 11},
     {"_pecotmr_rcpp_mr_ash_rss", (DL_FUNC) &_pecotmr_rcpp_mr_ash_rss, 17},
     {"_pecotmr_prs_cs_rcpp", (DL_FUNC) &_pecotmr_prs_cs_rcpp, 12},
     {"_pecotmr_qtl_enrichment_rcpp", (DL_FUNC) &_pecotmr_qtl_enrichment_rcpp, 7},

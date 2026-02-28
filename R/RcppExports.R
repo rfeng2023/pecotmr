@@ -19,8 +19,8 @@ compute_LD_gcta_cpp <- function(X, ncpus = 1L) {
     .Call('_pecotmr_compute_LD_gcta_cpp', PACKAGE = 'pecotmr', X, ncpus)
 }
 
-dentist_iterative_impute <- function(LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug, match_original = FALSE, verbose = FALSE) {
-    .Call('_pecotmr_dentist_iterative_impute', PACKAGE = 'pecotmr', LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug, match_original, verbose)
+dentist_iterative_impute <- function(LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, correct_chen_et_al_bug, verbose = FALSE) {
+    .Call('_pecotmr_dentist_iterative_impute', PACKAGE = 'pecotmr', LD_mat, nSample, zScore, pValueThreshold, propSVD, gcControl, nIter, gPvalueThreshold, ncpus, correct_chen_et_al_bug, verbose)
 }
 
 rcpp_mr_ash_rss <- function(bhat, shat, z, R, var_y, n, sigma2_e, s0, w0, mu1_init, tol = 1e-8, max_iter = 1e5L, update_w0 = TRUE, update_sigma = TRUE, compute_ELBO = TRUE, standardize = FALSE, ncpus = 1L) {

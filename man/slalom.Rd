@@ -6,7 +6,8 @@
 \usage{
 slalom(
   zScore,
-  LD_mat,
+  R = NULL,
+  X = NULL,
   standard_error = rep(1, length(zScore)),
   abf_prior_variance = 0.04,
   nlog10p_dentist_s_threshold = 4,
@@ -17,8 +18,10 @@ slalom(
 \arguments{
 \item{zScore}{Numeric vector of z-scores corresponding to each variant.}
 
-\item{LD_mat}{Square matrix representing linkage disequilibrium (LD) information
-between variants. Must have dimensions matching the length of `zScore`.}
+\item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
+
+\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
+\code{compute_LD(X)}.}
 
 \item{standard_error}{Optional numeric vector of standard errors corresponding
 to each z-score. If not provided, a default value of 1 is assumed for all variants.}
@@ -44,8 +47,15 @@ Performs Approximate Bayesian Factor (ABF) analysis, identifies credible sets,
 and annotates lead variants based on fine-mapping results. It computes p-values
 from z-scores assuming a two-sided standard normal distribution.
 }
+\details{
+Provide either an LD correlation matrix \code{R} or a genotype matrix \code{X}
+(from which LD is derived automatically via \code{compute_LD}).
+}
 \examples{
-# Assuming `zScore` is your vector of z-scores, `LD_mat` is your LD matrix,
+# Assuming `zScore` is your vector of z-scores, `R` is your LD matrix,
 # and optionally `standard_error` is your vector of standard errors:
-results <- slalom(zScore, LD_mat, standard_error)
+results <- slalom(zScore, R = R, standard_error = standard_error)
+}
+\seealso{
+\code{\link{dentist_single_window}}, \code{\link{resolve_LD_input}}
 }

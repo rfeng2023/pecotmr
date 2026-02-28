@@ -4,9 +4,13 @@
 #' and annotates lead variants based on fine-mapping results. It computes p-values
 #' from z-scores assuming a two-sided standard normal distribution.
 #'
+#' Provide either an LD correlation matrix \code{R} or a genotype matrix \code{X}
+#' (from which LD is derived automatically via \code{compute_LD}).
+#'
 #' @param zScore Numeric vector of z-scores corresponding to each variant.
-#' @param LD_mat Square matrix representing linkage disequilibrium (LD) information
-#'   between variants. Must have dimensions matching the length of `zScore`.
+#' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
+#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
+#'   \code{compute_LD(X)}.
 #' @param standard_error Optional numeric vector of standard errors corresponding
 #'   to each z-score. If not provided, a default value of 1 is assumed for all variants.
 #' @param abf_prior_variance Numeric, the prior effect size variance for ABF calculations.
@@ -20,13 +24,19 @@
 #' @return A list containing the annotated LD matrix with ABF results, credible sets,
 #'   lead variant, and DENTIST-S statistics; and a summary dataframe with aggregate statistics.
 #' @examples
-#' # Assuming `zScore` is your vector of z-scores, `LD_mat` is your LD matrix,
+#' # Assuming `zScore` is your vector of z-scores, `R` is your LD matrix,
 #' # and optionally `standard_error` is your vector of standard errors:
-#' results <- slalom(zScore, LD_mat, standard_error)
+#' results <- slalom(zScore, R = R, standard_error = standard_error)
+#' @seealso \code{\link{dentist_single_window}}, \code{\link{resolve_LD_input}}
 #' @export
 #'
-slalom <- function(zScore, LD_mat, standard_error = rep(1, length(zScore)), abf_prior_variance = 0.04,
-                   nlog10p_dentist_s_threshold = 4.0, r2_threshold = 0.6, lead_variant_choice = "pvalue") {
+slalom <- function(zScore, R = NULL, X = NULL, standard_error = rep(1, length(zScore)),
+                   abf_prior_variance = 0.04, nlog10p_dentist_s_threshold = 4.0,
+                   r2_threshold = 0.6, lead_variant_choice = "pvalue") {
+  # Resolve LD matrix from R or X
+  ld_resolved <- resolve_LD_input(R = R, X = X, need_nSample = FALSE)
+  LD_mat <- ld_resolved$R
+
   if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
     stop("LD_mat must be a square matrix matching the length of zScore.")
   }
@@ -72,7 +82,7 @@ slalom <- function(zScore, LD_mat, standard_error = rep(1, length(zScore)), abf_
   r2 <- LD_mat^2
   t_dentist_s <- (zScore - LD_mat[, lead_idx] * zScore[lead_idx])^2 / (1 - r2[, lead_idx])
   t_dentist_s[t_dentist_s < 0] <- Inf
-  nlog10p_dentist_s <- -log10(1 - pchisq(t_dentist_s, df = 1))
+  nlog10p_dentist_s <- -log10(pchisq(t_dentist_s, df = 1, lower.tail = FALSE))
   outliers <- (r2[, lead_idx] > r2_threshold) & (nlog10p_dentist_s > nlog10p_dentist_s_threshold)
 
   n_r2 <- sum(r2[, lead_idx] > r2_threshold)

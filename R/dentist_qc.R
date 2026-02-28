@@ -1,3 +1,39 @@
+#' Resolve LD Input: Accept Either R (LD matrix) or X (Genotype Matrix)
+#'
+#' Internal helper that validates and resolves the LD input for QC functions.
+#' Exactly one of \code{R} or \code{X} must be provided. When \code{X} is
+#' provided, LD is computed via \code{compute_LD(X)} and \code{nSample}
+#' defaults to \code{nrow(X)}.
+#'
+#' @param R Square LD correlation matrix, or NULL.
+#' @param X Genotype matrix (samples x SNPs), or NULL.
+#' @param nSample Sample size. Required when \code{R} is provided and
+#'   \code{need_nSample} is TRUE; inferred from \code{X} when \code{X} is provided.
+#' @param need_nSample Logical; if TRUE, \code{nSample} must be available
+#'   (either provided or inferred from \code{X}).
+#'
+#' @return A list with components \code{R} (LD correlation matrix) and
+#'   \code{nSample} (integer or NULL).
+#'
+#' @noRd
+resolve_LD_input <- function(R = NULL, X = NULL, nSample = NULL, need_nSample = FALSE) {
+  if (is.null(R) && is.null(X)) {
+    stop("Either R (LD matrix) or X (genotype matrix) must be provided.")
+  }
+  if (!is.null(R) && !is.null(X)) {
+    stop("Provide either R or X, not both.")
+  }
+  if (!is.null(X)) {
+    if (!is.matrix(X)) X <- as.matrix(X)
+    if (is.null(nSample)) nSample <- nrow(X)
+    R <- compute_LD(X, method = "sample")
+  }
+  if (need_nSample && is.null(nSample)) {
+    stop("nSample is required when providing an LD matrix R.")
+  }
+  list(R = R, nSample = nSample)
+}
+
 #' Detect Outliers Using Dentist Algorithm
 #'
 #' DENTIST (Detecting Errors iN analyses of summary staTISTics) is a quality control
@@ -7,8 +43,11 @@
 #' heterogeneity between GWAS and LD reference samples.
 #'
 #' @param sum_stat A data frame containing summary statistics, including 'pos' or 'position' and 'z' or 'zscore' columns.
-#' @param LD_mat A matrix containing LD (linkage disequilibrium) information.
-#' @param nSample The number of samples.
+#' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
+#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
+#'   \code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.
+#' @param nSample The number of samples. Required when \code{R} is provided; inferred
+#'   from \code{X} when \code{X} is provided.
 #' @param window_size The size of the window for dividing the genomic region. Default is 2000000.
 #' @param pValueThreshold The p-value threshold for significance. Default is 5e-8.
 #' @param propSVD The proportion of singular value decomposition (SVD) to use. Default is 0.4.
@@ -17,8 +56,8 @@
 #' @param gPvalueThreshold The genomic p-value threshold for significance. Default is 0.05.
 #' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 0.99.
 #' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
-#' @param seed The random seed for reproducibility. Default is 999.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
+#' @param min_dim Minimum number of SNPs per window. Default is 2000.
 #'
 #' @return A data frame containing the imputed result and detected outliers.
 #'
@@ -35,34 +74,29 @@
 #'   \item{\code{outlier}}{A logical indicator specifying whether the observation is identified as an outlier based on the statistical test.}
 #' }
 #'
-#'
 #' @examples
 #' # Example usage of dentist
-#' dentist(sum_stat, LD_mat, nSample)
+#' dentist(sum_stat, R = LD_mat, nSample = nSample)
 #'
 #' @details
-#' # correct_chen_et_al_bug may affect the result in three parts compared with the original DENTIST method:
-#' # 1. the way that window is divided
-#'    when there is only one window and window size >= position range, it will run two windows
-#'    where the first window is the whole range (e.g., 0-4122) and second is the subset of it, (e.g., 742-4122), which adds no information
-#'    so if we set correct_chen_et_al_bug=TRUE and this is the scenario for window_size and positions, then it only runs on the whole window
-#'    A more general description for this is:
-#'        - if correct_chen_et_al_bug = FALSE, then there can never be a single window
-#'        - if window_size is invalid (<=0 or >=range):
-#'            - if correct_chen_et_al_bug==TRUE, run dentist single window, so just window (0-4122)
-#'            - if correct_chen_et_al_bug==FALSE, run in the dentist original way, so window (0-4122) and (742-4122)
-#'        - if window_size is valid:
-#'            - if correct_chen_et_al_bug==TRUE, divide the window but don't add additional window if the first window covers all, so just (0-4122)
-#'            - if correct_chen_et_al_bug==FALSE, divide the window in the dentist original way, so window (0-4122) and (742-4122)
-#' 2. comparison between iteration index t and nIter (explained in the source code)
-#' 3. !grouping_tmp (explained in the source code)
+#' Windowing uses the original DENTIST C++ binary's \code{segmentingByDist} algorithm
+#' (implemented in \code{\link{segment_by_dist}}). The \code{correct_chen_et_al_bug}
+#' parameter affects the iterative filtering in two ways:
+#' \enumerate{
+#'   \item Comparison between iteration index \code{t} and \code{nIter} (explained in source code)
+#'   \item The \code{!grouping_tmp} operator bug (explained in source code)
+#' }
 #'
 #' @export
-dentist <- function(sum_stat, LD_mat, nSample,
+dentist <- function(sum_stat, R = NULL, X = NULL, nSample = NULL,
                     window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
-                    nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99, ncpus = 1, seed = 999,
-                    correct_chen_et_al_bug = TRUE, match_original = FALSE,
-                    use_original_windowing = FALSE, min_dim = 2000) {
+                    nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99, ncpus = 1,
+                    correct_chen_et_al_bug = TRUE, min_dim = 2000) {
+  # Resolve LD matrix and sample size from R or X
+  resolved <- resolve_LD_input(R = R, X = X, nSample = nSample, need_nSample = TRUE)
+  LD_mat <- resolved$R
+  nSample <- resolved$nSample
+
   # detect for column names and order by pos
   if (!any(tolower(c("pos", "position")) %in% tolower(colnames(sum_stat))) ||
     !any(tolower(c("z", "zscore")) %in% tolower(colnames(sum_stat)))) {
@@ -79,8 +113,17 @@ dentist <- function(sum_stat, LD_mat, nSample,
 
   sum_stat <- sum_stat %>% arrange(pos)
 
-  if (use_original_windowing) {
-    # Use the original DENTIST C++ binary's segmentation algorithm
+  # Use the original DENTIST C++ binary's segmentation algorithm.
+  # If the data has fewer SNPs than min_dim, run as a single window directly.
+  n_snps <- nrow(sum_stat)
+  if (n_snps < min_dim) {
+    dentist_result <- dentist_single_window(
+      sum_stat$z, R = LD_mat, nSample = nSample,
+      pValueThreshold = pValueThreshold, propSVD = propSVD, gcControl = gcControl,
+      nIter = nIter, gPvalueThreshold = gPvalueThreshold, duprThreshold = duprThreshold,
+      ncpus = ncpus, correct_chen_et_al_bug = correct_chen_et_al_bug
+    )
+  } else {
     window_divided_res <- segment_by_dist(sum_stat$pos, max_dist = window_size, min_dim = min_dim)
     dentist_result_by_window <- list()
     for (k in 1:nrow(window_divided_res)) {
@@ -90,39 +133,12 @@ dentist <- function(sum_stat, LD_mat, nSample,
       zScore_k <- sum_stat$z[idx_range]
       LD_mat_k <- LD_mat[idx_range, idx_range]
       dentist_result_by_window[[k]] <- dentist_single_window(
-        zScore_k, LD_mat_k, nSample,
-        pValueThreshold, propSVD, gcControl,
-        nIter, gPvalueThreshold, duprThreshold,
-        ncpus, seed, correct_chen_et_al_bug, match_original
+        zScore_k, R = LD_mat_k, nSample = nSample,
+        pValueThreshold = pValueThreshold, propSVD = propSVD, gcControl = gcControl,
+        nIter = nIter, gPvalueThreshold = gPvalueThreshold, duprThreshold = duprThreshold,
+        ncpus = ncpus, correct_chen_et_al_bug = correct_chen_et_al_bug
       )
     }
-    dentist_result <- merge_windows(dentist_result_by_window, window_divided_res)
-  } else if (window_size <= 0 | ((window_size >= max(sum_stat$pos) - min(sum_stat$pos) | is.na(window_size)) & (correct_chen_et_al_bug == TRUE))) {
-    dentist_result <- dentist_single_window(
-      sum_stat$z, LD_mat, nSample,
-      pValueThreshold, propSVD, gcControl,
-      nIter, gPvalueThreshold, duprThreshold,
-      ncpus, seed, correct_chen_et_al_bug, match_original
-    )
-  } else {
-    # divide windows using the existing (non-original) method
-    window_divided_res <- divide_into_windows(sum_stat$pos, window_size = window_size, correct_chen_et_al_bug = TRUE)
-    # compute dentist result for each window
-    dentist_result_by_window <- list()
-    for (k in 1:nrow(window_divided_res)) {
-      zScore_k <- sum_stat$z[window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]]
-      LD_mat_k <- LD_mat[
-        window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k],
-        window_divided_res$windowStartIdx[k]:window_divided_res$windowEndIdx[k]
-      ]
-      dentist_result_by_window[[k]] <- dentist_single_window(
-        zScore_k, LD_mat_k, nSample,
-        pValueThreshold, propSVD, gcControl,
-        nIter, gPvalueThreshold, duprThreshold,
-        ncpus, seed, correct_chen_et_al_bug, match_original
-      )
-    }
-    # merge single window result and generate a final dentist_result (similar to dentist_result above)
     dentist_result <- merge_windows(dentist_result_by_window, window_divided_res)
   }
   return(dentist_result)
@@ -130,90 +146,48 @@ dentist <- function(sum_stat, LD_mat, nSample,
 
 #' Perform DENTIST on a single window
 #'
-#' This function performs imputation of summary statistics for a single genomic window
-#' using the Dentist algorithm.
+#' Detect outliers in GWAS summary statistics using LD-based iterative imputation.
+#' Provide either an LD correlation matrix \code{R} or a genotype matrix \code{X}
+#' (from which LD and sample size are derived automatically).
 #'
-#' @param zScore A numeric vector containing the z-score values for variants within the window.
-#' @param LD_mat A square matrix containing linkage disequilibrium (LD) information for variants within the window.
-#' @param nSample The total number of samples.
-#' @param pValueThreshold The p-value threshold for significance. Default is 5e-8.
-#' @param propSVD The proportion of singular value decomposition (SVD) to use. Default is 0.4.
-#' @param gcControl Logical indicating whether genomic control should be applied. Default is FALSE.
-#' @param nIter The number of iterations for the Dentist algorithm. Default is 10.
-#' @param gPvalueThreshold The genomic p-value threshold for significance. Default is 0.05.
-#' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 0.99.
-#' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
-#' @param seed The random seed for reproducibility. Default is 999.
-#' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
+#' @param zScore Numeric vector of z-scores.
+#' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
+#' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
+#'   \code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.
+#' @param nSample Number of samples. Required when \code{R} is provided; inferred
+#'   from \code{X} when \code{X} is provided.
+#' @param pValueThreshold P-value threshold for outlier detection. Default is 5e-8.
+#' @param propSVD SVD truncation proportion. Default is 0.4.
+#' @param gcControl Logical; apply genomic control. Default is FALSE.
+#' @param nIter Number of iterations. Default is 10.
+#' @param gPvalueThreshold Grouping p-value threshold. Default is 0.05.
+#' @param duprThreshold Duplicate r-squared threshold. Default is 0.99.
+#' @param ncpus Number of CPU cores. Default is 1.
+#' @param correct_chen_et_al_bug Correct the original DENTIST operator! bug. Default is TRUE.
 #'
-#' @return data frame includes columns representing the imputed summary statistics and outlier detected.
+#' @return Data frame with columns: original_z, imputed_z, iter_to_correct, rsq,
+#'   is_duplicate, outlier_stat, outlier.
 #'
-#' @examples
-#' # Example usage of dentist_impute_single_window
-#' library(MASS)
-#' library(corpcor)
-#' set.seed(999)
-#' # Set the number of SNPs, sample size, and number of outliers
-#' n_snps <- 1000
-#' sample_size <- 10000
-#' n_outliers <- 5
-#'
-#' # Generate a correlation matrix with more off-diagonal correlation
-#' cor_matrix <- matrix(0, nrow = n_snps, ncol = n_snps)
-#' for (i in 1:(n_snps - 1)) {
-#'   for (j in (i + 1):n_snps) {
-#'     cor_matrix[i, j] <- runif(1, 0.2, 0.8) # Generate random correlations between 0.2 and 0.8
-#'     cor_matrix[j, i] <- cor_matrix[i, j]
-#'   }
-#' }
-#' diag(cor_matrix) <- 1
-#'
-#' # Convert the correlation matrix to a positive definite matrix
-#' ld_matrix <- cov2cor(make.positive.definite(cor_matrix))
-#'
-#' # Simulate Z-scores based on the LD matrix
-#' z_scores <- mvrnorm(n = 1, mu = rep(0, n_snps), Sigma = ld_matrix)
-#'
-#' # Introduce outliers
-#' outlier_indices <- sample(1:n_snps, n_outliers)
-#' z_scores[outlier_indices] <- rnorm(n_outliers, mean = 0, sd = 5)
-#' dentist_single_window(zScore, LD_mat, nSample)
-#'
-#' @seealso
-#' \code{\link{dentist}} for detecting outliers using the Dentist algorithm.
-#'
-#' @references
-#' https://github.com/Yves-CHEN/DENTIST
+#' @seealso \code{\link{dentist}}, \code{\link{slalom}}
+#' @references \url{https://github.com/Yves-CHEN/DENTIST}
 #' @export
-dentist_single_window <- function(zScore, LD_mat, nSample,
+dentist_single_window <- function(zScore, R = NULL, X = NULL, nSample = NULL,
                                   pValueThreshold = 5e-8, propSVD = 0.4, gcControl = FALSE,
                                   nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99,
-                                  ncpus = 1, seed = 999, correct_chen_et_al_bug = TRUE,
-                                  match_original = FALSE) {
-  calculate_stat <- function(impOp_zScores, impOp_imputed, impOp_rsq) {
-    (impOp_zScores - impOp_imputed)^2 / (1 - impOp_rsq)
-  }
+                                  ncpus = 1, correct_chen_et_al_bug = TRUE) {
+  # Resolve LD matrix and sample size from R or X
+  LD_mat <- resolve_LD_input(R = R, X = X, nSample = nSample, need_nSample = TRUE)
+  nSample <- LD_mat$nSample
+  LD_mat <- LD_mat$R
 
-  outlier_test <- function(stat, lambda, alpha = 5e-8) {
-    minusLogPvalueChisq <- function(stat) {
-      p <- pchisq(stat, df = 1, lower.tail = FALSE)
-      return(-log10(p))
-    }
-    ifelse(minusLogPvalueChisq(stat / lambda) > -log10(alpha), TRUE, FALSE)
-  }
-  # Check that number of variants cannot be below 2000
   if (length(zScore) < 2000) {
     warning("The number of variants is below 2000. The algorithm may not work as expected, as suggested by the original DENTIST.")
   }
-  # Check that LD_mat dimensions match the length of zScore
   if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
   }
-  # Remove dups
-  # The original DENTIST binary's dupThresh is an r-squared threshold (default 0.99).
-  # It converts to a correlation threshold: rThreshold = round(sqrt(dupThresh)*1000)/1000
-  # e.g. dupThresh=0.99 -> rThreshold=0.995
-  # Our duprThreshold parameter follows the same convention (r-squared), so we convert here.
+
+  # Deduplicate variants
   org_Zscore <- zScore
   dedup_res <- NULL
   rThreshold <- round(sqrt(duprThreshold) * 1000) / 1000
@@ -227,9 +201,7 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
     LD_mat <- dedup_res$filteredLD
   }
 
-  # Run the core C++ implementation, collecting warnings
-  # The Rcpp code already caps rsq_eigen at 1.0 when it exceeds 1,
-  # so the warning is informational. We collect and report them but do not error.
+  # Run C++ iterative imputation (collect rsq warnings)
   rsq_warnings <- character(0)
   warning_handler <- function(w) {
     if (grepl("Adjusted rsq_eigen value exceeding 1", w$message)) {
@@ -242,8 +214,8 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
     dentist_iterative_impute(
       LD_mat, nSample, zScore,
       pValueThreshold, propSVD, gcControl, nIter,
-      gPvalueThreshold, ncpus, seed, correct_chen_et_al_bug,
-      match_original, verbose_iter
+      gPvalueThreshold, ncpus, correct_chen_et_al_bug,
+      verbose_iter
     ),
     warning = warning_handler
   )
@@ -252,16 +224,17 @@ dentist_single_window <- function(zScore, LD_mat, nSample,
                     length(rsq_warnings), rsq_warnings[length(rsq_warnings)]))
   }
   res <- as.data.frame(res)
-  # Recover dups
+
+  # Recover duplicates
   if (duprThreshold < 1.0) {
     res <- add_dups_back_dentist(org_Zscore, res, dedup_res)
   }
-  # detect outlier
-  lambda_original <- 1
+
+  # Compute outlier stat: (z - imputed)^2 / (1 - rsq), matching binary formula
   res %>%
     mutate(
-      outlier_stat = z_diff^2,
-      outlier = outlier_test(outlier_stat, lambda_original)
+      outlier_stat = (original_z - imputed_z)^2 / pmax(1 - rsq, 1e-8),
+      outlier = -log10(pchisq(outlier_stat, df = 1, lower.tail = FALSE)) > -log10(pValueThreshold)
     ) %>%
     select(-z_diff)
 }
@@ -384,7 +357,7 @@ segment_by_dist <- function(pos, max_dist = 2000000, min_dim = 2000, verbose = F
   if (n == 0) stop("No positions provided")
 
   cutoff <- max_dist
-  minBlockSize <- 2000
+  minBlockSize <- min_dim
 
   # Precompute nextIdx: for each SNP i, the farthest SNP index within cutoff distance.
   # C++ uses 0-based; we translate to 1-based. Key: loop boundaries must allow
@@ -529,117 +502,6 @@ segment_by_dist <- function(pos, max_dist = 2000000, min_dim = 2000, verbose = F
   )
 }
 
-#' Divide Genomic Region into Windows
-#'
-#' This function divides a genomic region into windows based on the specified window size and other parameters.
-#'
-#' @param pos A numeric vector containing the positions of variants.
-#' @param window_size The size of the window for dividing the genomic region.
-#' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug.
-#'
-#' @return A data frame containing information about the divided windows, including start and end indices for both windows and fillers.
-#'
-#' @details
-#' - If \code{correct_chen_et_al_bug = FALSE}, then there can never be a single window.
-#' - If the \code{window_size} is invalid (<=0 or >=range):
-#'   - If \code{correct_chen_et_al_bug==TRUE}, the function runs with a single window, covering the entire genomic region.
-#'   - If \code{correct_chen_et_al_bug==FALSE}, the function runs in the original Dentist way, dividing the genomic region into multiple windows.
-#' - If the \code{window_size} is valid:
-#'   - If \code{correct_chen_et_al_bug==TRUE}, the function divides the window but doesn't add additional window if the first window covers all.
-#'   - If \code{correct_chen_et_al_bug==FALSE}, the function divides the window in the original Dentist way.
-#'
-#' @seealso
-#' \code{\link{dentist_single_window}} for detecting outlier for summary statistics for a single window using the Dentist algorithm.
-#'
-#' @noRd
-divide_into_windows <- function(pos, window_size, correct_chen_et_al_bug) {
-  windowStartIdx <- c()
-  windowEndIdx <- c()
-  fillStartIdx <- c()
-  fillEndIdx <- c()
-  input_pos_start <- min(pos)
-  input_pos_end <- max(pos)
-  pos_range <- input_pos_end - input_pos_start
-  if (window_size <= 0 | (window_size >= pos_range & correct_chen_et_al_bug == TRUE)) {
-    windowStartIdx <- 1
-    windowEndIdx <- length(pos)
-    fillStartIdx <- 1
-    fillEndIdx <- length(pos)
-  } else {
-    for (i in 1:(2 * ceiling(pos_range / window_size))) {
-      start_pointer <- ((i - 1) * window_size) * 0.5 + 1
-      end_pointer <- start_pointer + window_size
-      start_idx <- which.min(abs(pos - start_pointer - input_pos_start))
-      windowStartIdx <- c(windowStartIdx, start_idx)
-      end_idx <- which.min(abs(pos - end_pointer - input_pos_start))
-      windowEndIdx <- c(windowEndIdx, end_idx)
-    }
-    # avoid the situation where the last window is too small
-    cutoff <- which.min(abs(pos - input_pos_end + window_size))
-    closest_idx <- which.min(abs(windowStartIdx - cutoff))
-    windowStartIdx <- windowStartIdx[windowStartIdx <= cutoff | seq_along(windowStartIdx) == closest_idx]
-    windowEndIdx <- windowEndIdx[1:length(windowStartIdx)]
-
-    if (length(windowStartIdx) == 1 & (windowEndIdx[1] < 4122 | correct_chen_et_al_bug == FALSE)) {
-      # to avoid only 1 window
-      windowEndIdx <- c(windowEndIdx, length(pos))
-      start_pointer <- (pos[windowEndIdx] - pos[windowStartIdx]) * 0.25 + pos[windowStartIdx] # position
-      start_idx <- which.min(abs(pos - start_pointer))
-      windowStartIdx <- c(windowStartIdx, start_idx)
-    }
-    # decide the fillStartIdx and fillEndIdx
-    if (length(windowStartIdx) == 1) { # for single window (correct_chen_et_al_bug must be TRUE)
-      fillStartIdx <- 1
-      fillEndIdx <- length(pos)
-    } else { # for multiple windows
-      for (i in 1:length(windowStartIdx)) {
-        if (i == 1 & i != length(windowStartIdx)) {
-          # for the first window and not the last window, fill Start from 1 and fill End is 0.75 quantile
-          fill_start_idx <- 1
-          fillStartIdx <- c(fillStartIdx, fill_start_idx)
-          fill_end_pointer <- 0.75 * window_size + input_pos_start
-          fill_end_idx <- which.max(pos[pos <= fill_end_pointer])
-          fillEndIdx <- c(fillEndIdx, fill_end_idx)
-        } else if (i != length(windowStartIdx)) {
-          # for the windows in the middle, the start is the next variant of the previous fillendIdx, and the end is the 0.75 quantile
-          fillStartIdx <- c(fillStartIdx, fillEndIdx[i - 1] + 1)
-          fill_end_pointer <- pos[windowStartIdx[i]] + 0.75 * window_size
-          fill_end_idx <- which.max(pos[pos <= fill_end_pointer])
-          fillEndIdx <- c(fillEndIdx, fill_end_idx)
-        }
-      }
-      # for the last window, the start is the next variant of the previous fillEndIdx, and the end is the last variant
-      fillStartIdx <- c(fillStartIdx, fillEndIdx[length(fillEndIdx)] + 1)
-      fillEndIdx <- c(fillEndIdx, length(pos))
-    }
-  }
-  # combine window information into a data frame
-  window_index <- 1:length(windowStartIdx)
-  window_divided_res <- data.frame(
-    windowIdx = window_index,
-    windowStartIdx = windowStartIdx,
-    windowEndIdx = windowEndIdx,
-    fillStartIdx = fillStartIdx,
-    fillEndIdx = fillEndIdx
-  )
-  # check if the divided windows are valid
-  invalid_ends <- window_divided_res$fillStartIdx[1] != 1 | window_divided_res$fillEndIdx[nrow(window_divided_res)] != length(pos)
-  if (nrow(window_divided_res) == 1 & invalid_ends) {
-    stop("Invalid window divided!")
-  } else if (nrow(window_divided_res) > 1) {
-    invalid_middle <- 0
-    for (i in 1:(nrow(window_divided_res) - 1)) {
-      if (fillStartIdx[i + 1] - fillEndIdx[i] != 1) {
-        invalid_middle <- invalid_middle + 1
-      }
-    }
-    if (invalid_ends | invalid_middle != 0) {
-      stop("Invalid window divided!")
-    }
-  }
-  return(window_divided_res)
-}
-
 #' Merge dentist Results by Window
 #'
 #' This function merges DENTIST results by window into a single data frame.
@@ -741,11 +603,11 @@ read_dentist_sumstat <- function(gwas_summary) {
 #' @param gPvalueThreshold GWAS p-value threshold for grouping. Default is 0.05.
 #' @param duprThreshold LD r-squared threshold for duplicate detection. Default is 0.99.
 #' @param ncpus Number of CPU threads. Default is 1.
-#' @param seed Random seed. Default is 999.
 #' @param correct_chen_et_al_bug Logical; correct known bugs in original DENTIST. Default is TRUE.
-#' @param match_original Logical; use original DENTIST RNG and seed values. Default is FALSE.
-#' @param use_original_windowing Logical; use original DENTIST C++ windowing algorithm. Default is FALSE.
-#' @param min_dim Minimum number of SNPs per window (for original windowing). Default is 2000.
+#' @param min_dim Minimum number of SNPs per window. Default is 2000.
+#' @param match_binary_LD Logical; use GCTA-style LD computation and raw B-allele
+#'   counts to match the DENTIST binary's exact floating-point behavior. Requires
+#'   snpStats. Default is FALSE.
 #' @param verbose Logical; print progress messages. Default is TRUE.
 #'
 #' @return A list with components:
@@ -786,11 +648,9 @@ dentist_from_files <- function(gwas_summary,
                                 gPvalueThreshold = 0.05,
                                 duprThreshold = 0.99,
                                 ncpus = 1,
-                                seed = 999,
                                 correct_chen_et_al_bug = TRUE,
-                                match_original = FALSE,
-                                use_original_windowing = FALSE,
                                 min_dim = 2000,
+                                match_binary_LD = FALSE,
                                 verbose = TRUE) {
   # 1. Read summary stats
   if (verbose) message("Reading summary statistics...")
@@ -861,13 +721,12 @@ dentist_from_files <- function(gwas_summary,
   }
 
   # 6. Load genotypes and compute LD
-  # When match_original = TRUE, load raw B-allele counts (as in the .bed file)
-  # to match the binary's exact floating-point behavior. Otherwise use the
-  # standard load_genotype_region() which returns A-allele counts (2 - B).
   if (verbose) message("Loading genotype data...")
-  if (match_original) {
+  if (match_binary_LD) {
+    # Load raw B-allele counts (as in the .bed file) to match the DENTIST
+    # binary's exact floating-point behavior via GCTA-style LD computation.
     if (!requireNamespace("snpStats", quietly = TRUE)) {
-      stop("snpStats is required for match_original = TRUE")
+      stop("snpStats is required for match_binary_LD = TRUE")
     }
     geno <- snpStats::read.plink(bfile)
     X <- as(geno$genotypes, "numeric")  # B-allele counts, matching binary
@@ -914,11 +773,10 @@ dentist_from_files <- function(gwas_summary,
                                 ncol(X_sub), nrow(X_sub), n_missing))
 
   # Compute LD matrix.
-  # When match_original = TRUE, use the C++ GCTA-style computation that matches
-  # the binary's bfileOperations.cpp exactly: per-pair missing data handling,
-  # sequential sample accumulation, same floating-point operation order.
-  # Otherwise use R's standard sample correlation.
-  if (match_original) {
+  if (match_binary_LD) {
+    # Use C++ GCTA-style computation matching the binary's bfileOperations.cpp
+    # exactly: per-pair missing data handling, sequential sample accumulation,
+    # same floating-point operation order.
     N_kept <- (nrow(X_sub) %/% 4L) * 4L
     if (N_kept < nrow(X_sub)) {
       X_sub <- X_sub[seq_len(N_kept), , drop = FALSE]
@@ -941,7 +799,7 @@ dentist_from_files <- function(gwas_summary,
   if (verbose) message("Running R DENTIST implementation...")
   dentist_result <- dentist(
     sum_stat = dentist_input,
-    LD_mat = LD_mat,
+    R = LD_mat,
     nSample = nSample,
     window_size = window_size,
     pValueThreshold = pValueThreshold,
@@ -950,12 +808,9 @@ dentist_from_files <- function(gwas_summary,
     nIter = nIter,
     gPvalueThreshold = gPvalueThreshold,
     duprThreshold = duprThreshold,
-    use_original_windowing = use_original_windowing,
-    min_dim = min_dim,
     ncpus = ncpus,
-    seed = seed,
     correct_chen_et_al_bug = correct_chen_et_al_bug,
-    match_original = match_original
+    min_dim = min_dim
   )
 
   # Attach SNP names to result using index_global when available (windowed mode),
