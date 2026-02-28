@@ -1,18 +1,15 @@
 // Rcpp implementation of the DENTIST method (Chen et al.)
 // https://github.com/Yves-CHEN/DENTIST/tree/master#Citations
 //
-// This code reproduces the original DENTIST binary's algorithm and logic
-// exactly, matching to machine precision (~1e-15), when using the same
-// RNG seeds, Eigen eigendecomposition, and GCTA-style LD computation.
+// This code reproduces the original DENTIST binary's algorithm and logic,
+// using Armadillo (LAPACK) for eigendecomposition and GCTA-style LD computation.
 #include <RcppArmadillo.h>
-#include <RcppEigen.h>
-#include <omp.h> // Required for parallel processing
+#include <omp.h>
 #include <algorithm>
 #include <random>
 #include <vector>
 #include <unordered_set>
 
-// Enable C++11 via this plugin (Rcpp 0.10.3 or later)
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::plugins(cpp11)]]
 // [[Rcpp::plugins(openmp)]]
@@ -204,24 +201,15 @@ double minusLogPvalueChisq2(double stat) {
 	return -log10(p);
 }
 
-// Perform one iteration of the algorithm, assuming LD_mat is an arma::mat.
-// Uses Eigen's SelfAdjointEigenSolver (same as the original DENTIST C++ binary)
-// for numerically identical eigendecomposition.
-//
-// An alternative would be to use Armadillo's eig_sym (LAPACK-based), but even
-// tiny numerical differences cascade through iterative filtering, causing
-// completely different results after iteration 1.
+// Perform one iteration of the DENTIST algorithm using Armadillo's eig_sym
+// (LAPACK dsyevd) for eigendecomposition. Both Eigen and Armadillo return
+// eigenvalues in ascending order, so the logic is identical.
 void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const std::vector<size_t>& idx2,
                   const arma::vec& zScore, arma::vec& imputedZ, arma::vec& rsqList, arma::vec& zScore_e,
                   size_t nSample, float probSVD, int ncpus, bool verbose) {
 	if (verbose) {
-		Rcpp::Rcout << "LD_mat dimensions: " << LD_mat.n_rows << " x " << LD_mat.n_cols << std::endl;
-		Rcpp::Rcout << "idx size: " << idx.size() << std::endl;
-		Rcpp::Rcout << "idx2 size: " << idx2.size() << std::endl;
-		Rcpp::Rcout << "zScore size: " << zScore.size() << std::endl;
-		Rcpp::Rcout << "imputedZ size: " << imputedZ.size() << std::endl;
-		Rcpp::Rcout << "rsqList size: " << rsqList.size() << std::endl;
-		Rcpp::Rcout << "zScore_e size: " << zScore_e.size() << std::endl;
+		Rcpp::Rcout << "LD_mat: " << LD_mat.n_rows << "x" << LD_mat.n_cols
+		            << " idx: " << idx.size() << " idx2: " << idx2.size() << std::endl;
 	}
 
 	int nProcessors = omp_get_max_threads();
@@ -230,96 +218,78 @@ void oneIteration(const arma::mat& LD_mat, const std::vector<size_t>& idx, const
 
 	size_t K = std::min(static_cast<size_t>(idx.size()), nSample) * probSVD;
 
-	// Check dimensions before filling matrices
-	if (idx2.size() > LD_mat.n_rows || idx.size() > LD_mat.n_cols) {
+	// Validate dimensions
+	if (idx2.size() > LD_mat.n_rows || idx.size() > LD_mat.n_cols)
 		Rcpp::stop("Inconsistent dimensions between LD_mat and idx2/idx in oneIteration()");
-	}
-	for (size_t i = 0; i < idx.size(); ++i) {
-		if (idx[i] >= zScore.size()) {
+	for (size_t i = 0; i < idx.size(); ++i)
+		if (idx[i] >= zScore.size())
 			Rcpp::stop("Invalid index in idx: " + std::to_string(idx[i]));
-		}
-	}
-	for (size_t i = 0; i < idx2.size(); ++i) {
-		if (idx2[i] >= zScore.size()) {
+	for (size_t i = 0; i < idx2.size(); ++i)
+		if (idx2[i] >= zScore.size())
 			Rcpp::stop("Invalid index in idx2: " + std::to_string(idx2[i]));
+
+	// Convert to arma::uvec for idiomatic submatrix extraction
+	arma::uvec aidx(idx.size()), aidx2(idx2.size());
+	for (size_t i = 0; i < idx.size(); i++) aidx(i) = idx[i];
+	for (size_t i = 0; i < idx2.size(); i++) aidx2(i) = idx2[i];
+
+	// Extract submatrices and z-score subset
+	arma::mat LD_it = LD_mat(aidx2, aidx);
+	arma::mat VV = LD_mat(aidx, aidx);
+	arma::vec zScore_sub = zScore(aidx);
+
+	// Eigendecomposition (ascending order, same as Eigen's SelfAdjointEigenSolver)
+	arma::vec eigval;
+	arma::mat eigvec;
+	arma::eig_sym(eigval, eigvec, VV);
+
+	// Determine effective rank (eigenvalues >= 0.0001)
+	int n_eig = eigval.n_elem;
+	int nZeros = 0;
+	for (int j = 0; j < n_eig; j++)
+		if (eigval(j) < 0.0001) nZeros++;
+	int nRank = n_eig - nZeros;
+	if (K > static_cast<size_t>(nRank)) K = nRank;
+
+	if (verbose)
+		Rcpp::Rcout << "Rank: " << nRank << ", Zeros: " << nZeros << ", K: " << K << std::endl;
+
+	if (K <= 1) {
+		Rcpp::warning("Rank of eigen matrix <= 1, skipping imputation for this partition");
+		for (size_t i = 0; i < idx2.size(); ++i) {
+			imputedZ[idx2[i]] = 0.0;
+			rsqList[idx2[i]] = 0.0;
+			zScore_e[idx2[i]] = 0.0;
 		}
+		return;
 	}
 
-	{
-		Eigen::MatrixXd LD_it_e(idx2.size(), idx.size());
-		Eigen::VectorXd zScore_eigen_e(idx.size());
-		Eigen::MatrixXd VV_e(idx.size(), idx.size());
+	// Build ui (top K eigenvectors, largest first) and wi (inverse eigenvalues)
+	arma::mat ui(n_eig, K);
+	arma::vec wi(K);
+	for (size_t m = 0; m < K; m++) {
+		int j = n_eig - m - 1;  // from largest eigenvalue
+		ui.col(m) = eigvec.col(j);
+		wi(m) = 1.0 / eigval(j);
+	}
 
-#pragma omp parallel for
-		for (size_t i = 0; i < idx2.size(); i++)
-			for (size_t k = 0; k < idx.size(); k++)
-				LD_it_e(i, k) = LD_mat(idx2[i], idx[k]);
+	// Imputation: beta = LD_it * ui * diag(wi), then imputed_z = beta * ui' * z
+	arma::mat beta = LD_it * (ui.each_row() % wi.t());
+	arma::vec zScore_imp = beta * (ui.t() * zScore_sub);
+	arma::vec rsq_vec = arma::diagvec(beta * (ui.t() * LD_it.t()));
 
-#pragma omp parallel for
-		for (size_t i = 0; i < idx.size(); i++) {
-			zScore_eigen_e(i) = zScore[idx[i]];
-			for (size_t j = 0; j < idx.size(); j++)
-				VV_e(i, j) = LD_mat(idx[i], idx[j]);
+	// Store results
+	for (size_t i = 0; i < idx2.size(); ++i) {
+		imputedZ[idx2[i]] = zScore_imp(i);
+		rsqList[idx2[i]] = rsq_vec(i);
+		if (rsq_vec(i) >= 1) {
+			rsqList[idx2[i]] = std::min(rsq_vec(i), 1.0);
+			Rcpp::warning("Adjusted rsq value exceeding 1: " + std::to_string(rsq_vec(i)));
 		}
-
-		Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(VV_e);
-
-		int nRank = es.eigenvectors().rows();
-		int nZeros = 0;
-		for (int j = 0; j < nRank; j++)
-			if (es.eigenvalues()(j) < 0.0001) nZeros++;
-		nRank -= nZeros;
-		if (K > static_cast<size_t>(nRank)) K = nRank;
-
-		if (verbose) {
-			Rcpp::Rcout << "Rank: " << nRank << ", Zeros: " << nZeros << ", K: " << K << std::endl;
-		}
-
-		if (K <= 1) {
-			if (verbose) {
-				Rcpp::Rcout << "Warning: Rank of eigen matrix <= 1 (K=" << K
-				            << "), skipping imputation for this partition" << std::endl;
-			}
-			Rcpp::warning("Rank of eigen matrix <= 1, skipping imputation for this partition");
-			for (size_t i = 0; i < idx2.size(); ++i) {
-				imputedZ[idx2[i]] = 0.0;
-				rsqList[idx2[i]] = 0.0;
-				zScore_e[idx2[i]] = 0.0;
-			}
-			return;
-		}
-
-		// Build ui and wi exactly as the binary does (top K eigenvectors from the end)
-		Eigen::MatrixXd ui_e = Eigen::MatrixXd::Identity(es.eigenvectors().rows(), K);
-		Eigen::MatrixXd wi_e = Eigen::MatrixXd::Identity(K, K);
-#pragma omp parallel for
-		for (size_t m = 0; m < K; m++) {
-			int j = es.eigenvectors().rows() - m - 1;
-			for (int i = 0; i < es.eigenvectors().rows(); i++) {
-				ui_e(i, m) = es.eigenvectors()(i, j);
-			}
-			wi_e(m, m) = 1.0 / es.eigenvalues()(j);
-		}
-
-		Eigen::MatrixXd beta_e = LD_it_e * ui_e * wi_e;
-		Eigen::VectorXd zScore_eigen_imp_e = beta_e * (ui_e.transpose() * zScore_eigen_e);
-		Eigen::VectorXd rsq_eigen_e = (beta_e * (ui_e.transpose() * LD_it_e.transpose())).diagonal();
-
-#pragma omp parallel for
-		for (size_t i = 0; i < idx2.size(); ++i) {
-			imputedZ[idx2[i]] = zScore_eigen_imp_e(i);
-			// Match binary behavior: binary does NOT cap rsq at 1.0 (it exits on error)
-			rsqList[idx2[i]] = rsq_eigen_e(i);
-			if (rsq_eigen_e(i) >= 1) {
-				rsqList[idx2[i]] = std::min(rsq_eigen_e(i), 1.0);
-				Rcpp::warning("Adjusted rsq_eigen value exceeding 1: " + std::to_string(rsq_eigen_e(i)));
-			}
-			size_t j = idx2[i];
-			// Binary uses: sqrt(LD_mat[j,j] - rsqList[j]) with no clamping
-			double denom_sq = LD_mat(j, j) - rsqList[j];
-			if (denom_sq < 1e-8) denom_sq = 1e-8;
-			zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(denom_sq);
-		}
+		size_t j = idx2[i];
+		double denom_sq = LD_mat(j, j) - rsqList[j];
+		if (denom_sq < 1e-8) denom_sq = 1e-8;
+		zScore_e[j] = (zScore[j] - imputedZ[j]) / std::sqrt(denom_sq);
 	}
 }
 
