@@ -8,7 +8,7 @@
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
 #' @param pip_cutoff_to_skip_sumstat A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.
-#' @param qc_method Quality control method to use. Options are "rss_qc", "dentist", or "slalom" (default: "rss_qc").
+#' @param qc_method Quality control method to use. Options are "dentist" or "slalom" (default: "dentist").
 #' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).
 #' @param impute_opts A list of imputation options including rcond, R2_threshold, and minimum_ld (default: list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)).
 #'
@@ -39,7 +39,7 @@ colocboost_analysis_pipeline <- function(region_data,
                                          # - sumstat QC
                                          remove_indels = FALSE,
                                          pip_cutoff_to_skip_sumstat = 0,
-                                         qc_method = c("rss_qc", "dentist", "slalom"),
+                                         qc_method = c("dentist", "slalom"),
                                          impute = TRUE,
                                          impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
                                          ...) {
@@ -351,7 +351,7 @@ colocboost_analysis_pipeline <- function(region_data,
 #' @param maf_cutoff A scalar to remove variants with maf < maf_cutoff, dafault is 0.005.
 #' @param pip_cutoff_to_skip_ind A vector of cutoff values for skipping analysis based on PIP values for each context. Default is 0.
 #' @param pip_cutoff_to_skip_sumstat A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.
-#' @param qc_method Quality control method to use. Options are "rss_qc", "dentist", or "slalom" (default: "rss_qc").
+#' @param qc_method Quality control method to use. Options are "dentist" or "slalom" (default: "dentist").
 #' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).
 #' @param impute_opts A list of imputation options including rcond, R2_threshold, and minimum_ld (default: list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)).
 #'
@@ -376,7 +376,7 @@ qc_regional_data <- function(region_data,
                              # - sumstat
                              remove_indels = FALSE,
                              pip_cutoff_to_skip_sumstat = 0,
-                             qc_method = c("rss_qc", "dentist", "slalom"),
+                             qc_method = c("dentist", "slalom"),
                              impute = TRUE,
                              impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)) {
   #### related internal functions
@@ -497,7 +497,7 @@ qc_regional_data <- function(region_data,
   summary_stats_qc_multitask <- function(sumstat_data,
                                          remove_indels = FALSE,
                                          pip_cutoff_to_skip_sumstat = 0,
-                                         qc_method = c("rss_qc", "dentist", "slalom"),
+                                         qc_method = c("dentist", "slalom"),
                                          impute = TRUE,
                                          impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)) {
     n_LD <- length(sumstat_data$LD_info)

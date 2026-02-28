@@ -15,7 +15,7 @@ rss_analysis_pipeline(
   skip_region = NULL,
   extract_region_name = NULL,
   region_name_col = NULL,
-  qc_method = c("rss_qc", "dentist", "slalom"),
+  qc_method = c("dentist", "slalom"),
   finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
   finemapping_opts = list(init_L = 5, max_L = 20, l_step = 5, coverage = c(0.95, 0.7,
     0.5), signal_cutoff = 0.025),
@@ -49,7 +49,7 @@ Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000"
 
 \item{region_name_col}{Filter this specific column for the extract_region_name.}
 
-\item{qc_method}{Quality control method to use. Options are "rss_qc", "dentist", or "slalom" (default: "rss_qc").}
+\item{qc_method}{Quality control method to use. Options are "dentist" or "slalom" (default: "dentist").}
 
 \item{impute}{Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).}
 
