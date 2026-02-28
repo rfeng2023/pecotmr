@@ -719,9 +719,11 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 #' @param tau_range Numeric vector of tau values to use (default: seq(0.1, 0.9, by = 0.05))
 #' @param min_valid Minimum number of valid (non-NA) coefficients required (default: 10)
 #' @return A data frame with variant_id, xi, and xi_pval columns
-#' @importFrom XICOR xicor
 #' @export
 calculate_xi_correlation <- function(rq_coef_result, tau_range = seq(0.1, 0.9, by = 0.05), min_valid = 10) {
+  if (!requireNamespace("XICOR", quietly = TRUE)) {
+    stop("Package 'XICOR' is required for xi correlation calculation. Please install it.")
+  }
   # Build column names for the specified tau range
   coef_col_names <- paste0("coef_qr_", tau_range)
 

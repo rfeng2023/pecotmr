@@ -31,7 +31,6 @@ r44 = {features = ["r44"]}
 "gcc" = "*"
 
 [dependencies]
-"gsl" = "*"
 "bioconductor-bioccheck" = "*"
 "r-rcpparmadillo" = ">=15"
 "r-devtools" = "*"

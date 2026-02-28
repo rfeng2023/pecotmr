@@ -14,7 +14,6 @@ Authors@R: c(person("Gao Wang",role = c("cre","aut"),
 License: MIT + file LICENSE
 Imports:
     IRanges,
-    R6,
     Rcpp,
     S4Vectors,
     bigsnpr,
@@ -37,6 +36,7 @@ Imports:
     vctrs,
     vroom
 Suggests:
+    coda,
     GBJ,
     Rfast,
     flashier,
@@ -52,7 +52,7 @@ Suggests:
     qgg,
     quadprog,
     quantreg,
-    XICOR,    
+    XICOR,
     qvalue,
     rmarkdown,
     snpStats,
