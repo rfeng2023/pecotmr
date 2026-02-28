@@ -51,11 +51,17 @@ Suggests:
     qgg,
     quadprog,
     quantreg,
+    udr,
     XICOR,
     qvalue,
     rmarkdown,
     snpStats,
     testthat
+Remotes:
+    stephenslab/fsusieR,
+    stephenslab/mr.mash.alpha,
+    stephenslab/mvsusieR,
+    stephenslab/udr
 LinkingTo:
     Rcpp,
     RcppArmadillo

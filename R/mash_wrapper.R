@@ -800,12 +800,15 @@ mash_pipeline <- function(mash_input, alpha, residual_correlation = NULL, uncons
   # Penalty strength
   lambda <- ncol(mash_input$strong.z)
   # FIXME: Please change this to use flashier + ED instead of UDR
+  if (!requireNamespace("udr", quietly = TRUE)) {
+    stop("Package 'udr' is required. Install with: devtools::install_github('stephenslab/udr')")
+  }
   # Initialize udr
-  fit0 <- ud_init(mash_data, n_unconstrained = 50, U_scaled = U.can)
+  fit0 <- udr::ud_init(mash_data, n_unconstrained = 50, U_scaled = U.can)
   # Fit udr and use penalty as default as suggested by Yunqi penalty is
   # necessary in small sample size case, and there won't be a difference in
   # large sample size
-  fit2 <- ud_fit(fit0, control = list(unconstrained.update,
+  fit2 <- udr::ud_fit(fit0, control = list(unconstrained.update,
     scaled.update = "fa",
     resid.update = "none", lambda = lambda, penalty.type = "iw", maxiter = 1000,
     tol = 0.01, tol.lik = 0.01

@@ -420,9 +420,11 @@ susie_inf_weights <- function(X = NULL, y = NULL, susie_inf_fit = NULL, ...) {
   }
 }
 
-#' @importFrom mr.mash.alpha coef.mr.mash
 #' @export
 mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
+  if (!requireNamespace("mr.mash.alpha", quietly = TRUE)) {
+    stop("Package 'mr.mash.alpha' is required. Install with: devtools::install_github('stephenslab/mr.mash.alpha')")
+  }
   if (is.null(mrmash_fit)) {
     message("mrmash_fit is not provided; fitting mr.mash now ...")
     if (is.null(X) || is.null(Y)) {
@@ -430,28 +432,35 @@ mrmash_weights <- function(mrmash_fit = NULL, X = NULL, Y = NULL, ...) {
     }
     mrmash_fit <- mrmash_wrapper(X, Y, ...)
   }
-  return(coef.mr.mash(mrmash_fit)[-1, ])
+  return(mr.mash.alpha::coef.mr.mash(mrmash_fit)[-1, ])
 }
 
-#' @importFrom mvsusieR mvsusie coef.mvsusie create_mixture_prior
 #' @export
 mvsusie_weights <- function(mvsusie_fit = NULL, X = NULL, Y = NULL, prior_variance = NULL, residual_variance = NULL, L = 30, ...) {
+  if (!requireNamespace("mvsusieR", quietly = TRUE)) {
+    stop("Package 'mvsusieR' is required. Install with: devtools::install_github('stephenslab/mvsusieR')")
+  }
   if (is.null(mvsusie_fit)) {
     message("mvsusie_fit is not provided; fitting mvSuSiE now ...")
     if (is.null(X) || is.null(Y)) {
       stop("Both X and Y must be provided if mvsusie_fit is NULL.")
     }
-    if (is.null(prior_variance)) prior_variance <- create_mixture_prior(R = ncol(Y))
-    if (is.null(residual_variance)) residual_variance <- mr.mash.alpha:::compute_cov_flash(Y)
+    if (is.null(prior_variance)) prior_variance <- mvsusieR::create_mixture_prior(R = ncol(Y))
+    if (is.null(residual_variance)) {
+      if (!requireNamespace("mr.mash.alpha", quietly = TRUE)) {
+        stop("Package 'mr.mash.alpha' is required for residual variance estimation. Install with: devtools::install_github('stephenslab/mr.mash.alpha')")
+      }
+      residual_variance <- mr.mash.alpha:::compute_cov_flash(Y)
+    }
 
-    mvsusie_fit <- mvsusie(
+    mvsusie_fit <- mvsusieR::mvsusie(
       X = X, Y = Y, L = L, prior_variance = prior_variance,
       residual_variance = residual_variance, precompute_covariances = F,
       compute_objective = T, estimate_residual_variance = F, estimate_prior_variance = T,
       estimate_prior_method = "EM", approximate = F, ...
     )
   }
-  return(coef.mvsusie(mvsusie_fit)[-1, ])
+  return(mvsusieR::coef.mvsusie(mvsusie_fit)[-1, ])
 }
 
 # Get a reasonable setting for the standard deviations of the mixture
