@@ -495,6 +495,7 @@ lasso_weights <- function(X, y) glmnet_weights(X, y, 1)
 #'
 #' @examples
 #' wgt.mr.ash <- mrash_weights(eqtl$X, eqtl$y_res, beta.init = lasso_weights(X, y))
+#' @importFrom susieR mr.ash
 #' @importFrom stats predict
 #' @export
 mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
@@ -502,7 +503,7 @@ mrash_weights <- function(X, y, init_prior_sd = TRUE, ...) {
   if (!"beta.init" %in% names(args_list)) {
     args_list$beta.init <- lasso_weights(X, y)
   }
-  fit.mr.ash <- do.call(susieR::mr.ash, c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
+  fit.mr.ash <- do.call(mr.ash, c(list(X = X, y = y, sa2 = if (init_prior_sd) init_prior_sd(X, y)^2 else NULL), args_list))
   predict(fit.mr.ash, type = "coefficients")[-1]
 }
 #' Extract Coefficients From Bayesian Linear Regression

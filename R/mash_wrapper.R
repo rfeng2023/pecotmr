@@ -1,4 +1,4 @@
-#' @import vroom vroom
+#' @importFrom vroom vroom
 #' @export
 filter_invalid_summary_stat <- function(dat_list, bhat = NULL, sbhat = NULL, z = NULL, btoz = FALSE, sig_p_cutoff = 1E-6, filter_by_missing_rate = 0.2) {
   replace_values <- function(df, replace_with) {
