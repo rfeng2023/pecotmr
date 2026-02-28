@@ -56,9 +56,10 @@ Suggests:
     rmarkdown,
     snpStats,
     testthat
-LinkingTo: 
+LinkingTo:
     Rcpp,
     RcppArmadillo,
+    RcppEigen,
     RcppGSL
 NeedsCompilation: yes
 VignetteBuilder: knitr

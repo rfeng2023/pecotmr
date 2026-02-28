@@ -17,7 +17,10 @@ dentist(
   duprThreshold = 0.99,
   ncpus = 1,
   seed = 999,
-  correct_chen_et_al_bug = TRUE
+  correct_chen_et_al_bug = TRUE,
+  match_original = FALSE,
+  use_original_windowing = FALSE,
+  min_dim = 2000
 )
 }
 \arguments{

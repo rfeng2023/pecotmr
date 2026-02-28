@@ -16,7 +16,8 @@ dentist_single_window(
   duprThreshold = 0.99,
   ncpus = 1,
   seed = 999,
-  correct_chen_et_al_bug = TRUE
+  correct_chen_et_al_bug = TRUE,
+  match_original = FALSE
 )
 }
 \arguments{

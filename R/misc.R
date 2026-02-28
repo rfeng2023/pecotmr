@@ -136,30 +136,110 @@ is_zero_variance <- function(x) {
   }
 }
 
-compute_LD <- function(X) {
+#' Compute LD (Linkage Disequilibrium) Correlation Matrix from Genotypes
+#'
+#' Computes a pairwise Pearson correlation matrix from a genotype matrix.
+#' Supports two variance conventions:
+#' \describe{
+#'   \item{\code{"sample"}}{Standard sample variance with N-1 denominator (default).
+#'     Uses mean imputation for missing genotypes, then \code{Rfast::cora} (if available)
+#'     or base \code{cor()}.}
+#'   \item{\code{"population"}}{Population variance with N denominator, matching
+#'     GCTA-style tools (e.g. DENTIST, GCTA --make-grm). Per-SNP means are computed
+#'     from non-missing values; missing entries are set to zero after centering so they
+#'     do not contribute to cross-products. Cross-products are normalized by the total
+#'     sample count N, not by pairwise non-missing counts.}
+#' }
+#'
+#' @param X Numeric genotype matrix (samples x SNPs). May contain \code{NA}
+#'   for missing genotypes.
+#' @param method Character, either \code{"sample"} (default, N-1 denominator) or
+#'   \code{"population"} (N denominator, GCTA-style). Partial matching is supported.
+#' @param trim_samples Logical. If \code{TRUE} and \code{method = "population"},
+#'   drops trailing samples so that \code{nrow(X)} is a multiple of 4, matching
+#'   PLINK .bed file chunk processing. Ignored when \code{method = "sample"}.
+#'   Default is \code{FALSE}.
+#'
+#' @return A symmetric correlation matrix with row and column names taken from
+#'   \code{colnames(X)}.
+#'
+#' @details
+#' \strong{Missing data handling.}
+#' With \code{method = "sample"}, missing values are mean-imputed per SNP
+#' before computing the full Pearson correlation matrix.
+#' With \code{method = "population"}, per-SNP means are computed from
+#' non-missing values, the matrix is centered, then \code{NA}s are set to 0
+#' so that missing pairs contribute nothing to the cross-product.
+#' The denominator is always the total sample count \code{N}
+#' (after optional trimming), matching the original GCTA formula:
+#' \deqn{\text{Var}(X_i) = E[X_i^2] - E[X_i]^2}
+#' \deqn{\text{Cor}(X_i, X_j) = \frac{\text{Cov}(X_i, X_j)}{\sqrt{\text{Var}(X_i)\,\text{Var}(X_j)}}}
+#'
+#' \strong{Zero-variance SNPs.}
+#' Any monomorphic SNP will have zero variance, producing \code{NaN}
+#' correlations. These are set to 0 in the returned matrix; the diagonal
+#' is forced to 1.
+#'
+#' @examples
+#' \dontrun{
+#' X <- matrix(sample(0:2, 500, replace = TRUE), nrow = 50)
+#' colnames(X) <- paste0("rs", 1:10)
+#'
+#' # Standard sample correlation (default)
+#' R1 <- compute_LD(X)
+#'
+#' # GCTA-style population variance
+#' R2 <- compute_LD(X, method = "population")
+#' }
+#'
+#' @export
+compute_LD <- function(X, method = c("sample", "population"),
+                       trim_samples = FALSE) {
   if (is.null(X)) {
     stop("X must be provided.")
   }
+  method <- match.arg(method)
+  nms <- colnames(X)
 
-  # Mean impute X
-  genotype_data_imputed <- apply(X, 2, function(x) {
-    pos <- which(is.na(x))
-    if (length(pos) != 0) {
-      x[pos] <- mean(x, na.rm = TRUE)
+  if (method == "sample") {
+    # ---- Standard sample correlation (N-1 denominator) ----
+    # Mean impute missing values
+    X_imp <- apply(X, 2, function(x) {
+      nas <- is.na(x)
+      if (any(nas)) x[nas] <- mean(x, na.rm = TRUE)
+      x
+    })
+    if (requireNamespace("Rfast", quietly = TRUE)) {
+      R <- Rfast::cora(X_imp, large = TRUE)
+    } else {
+      R <- cor(X_imp)
     }
-    return(x)
-  })
-
-  # Check if Rfast package is installed
-  if (requireNamespace("Rfast", quietly = TRUE)) {
-    # Use Rfast::cora for faster correlation calculation
-    R <- Rfast::cora(genotype_data_imputed, large = TRUE)
   } else {
-    # Use base R cor function if Rfast is not installed
-    R <- cor(genotype_data_imputed)
+    # ---- Population variance (N denominator, GCTA-style) ----
+    # Optionally trim trailing samples to a multiple of 4 (matches .bed processing)
+    if (trim_samples) {
+      N_kept <- (nrow(X) %/% 4L) * 4L
+      if (N_kept < nrow(X)) X <- X[seq_len(N_kept), , drop = FALSE]
+    }
+    N <- nrow(X)
+    # Per-SNP means from non-missing values
+    col_means <- colMeans(X, na.rm = TRUE)
+    # Population variance: E[X^2] - E[X]^2
+    col_vars <- colMeans(X^2, na.rm = TRUE) - col_means^2
+    # Center; set NA -> 0 so missing pairs don't contribute to cross-products
+    X_c <- sweep(X, 2, col_means)
+    X_c[is.na(X_c)] <- 0
+    # Covariance with N denominator
+    cov_mat <- crossprod(X_c) / N
+    # Correlation
+    sd_vec <- sqrt(col_vars)
+    R <- cov_mat / outer(sd_vec, sd_vec)
   }
 
-  colnames(R) <- rownames(R) <- colnames(genotype_data_imputed)
+  # Ensure clean output
+  diag(R) <- 1.0
+  R[is.na(R) | is.nan(R)] <- 0
+  colnames(R) <- rownames(R) <- nms
   R
 }
 
