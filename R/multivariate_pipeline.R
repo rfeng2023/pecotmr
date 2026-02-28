@@ -12,6 +12,8 @@
 #' @param pip_cutoff_to_skip Cutoff value for skipping conditions based on PIP values. Default is 0.
 #' @param signal_cutoff Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.
 #' @param coverage A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).
+#' @param min_abs_corr Minimum absolute correlation for credible set purity filtering. Default is 0.8,
+#'   which is stricter than the susieR default of 0.5.
 #' @param data_driven_prior_matrices A list of data-driven covariance matrices for mr.mash weights.
 #' @param data_driven_prior_matrices_cv A list of data-driven covariance matrices for mr.mash weights in cross-validation.
 #' @param canonical_prior_matrices If set to TRUE, will compute canonical covariance matrices and add them into the prior covariance matrix list in mrmash_wrapper. Default is TRUE.
@@ -84,6 +86,7 @@ multivariate_analysis_pipeline <- function(
     # fine-mapping results summary
     signal_cutoff = 0.025,
     coverage = c(0.95, 0.7, 0.5),
+    min_abs_corr = 0.8,
     # TWAS weights and CV for TWAS weights
     twas_weights = TRUE,
     sample_partition = NULL,
@@ -292,7 +295,8 @@ multivariate_analysis_pipeline <- function(
   sec_coverage <- if (length(coverage) > 1) coverage[-1] else NULL
   mvsusie_result_trimmed <- susie_post_processor(
     res$mvsusie_fitted, X, NULL, 1, 1,
-    maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff, mode = "mvsusie", other_quantities = other_quantities
+    maf = maf, secondary_coverage = sec_coverage, signal_cutoff = signal_cutoff,
+    min_abs_corr = min_abs_corr, mode = "mvsusie", other_quantities = other_quantities
   )
   res <- c(res, mvsusie_result_trimmed)
   res$total_time_elapsed <- proc.time() - st

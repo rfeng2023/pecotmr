@@ -20,6 +20,8 @@
 #' @param l_step Step size for increasing the number of components during SuSiE optimization. Default is 5.
 #' @param signal_cutoff Cutoff value for signal identification in PIP values. Default is 0.025.
 #' @param coverage A vector of coverage probabilities for credible sets. Default is c(0.95, 0.7, 0.5).
+#' @param min_abs_corr Minimum absolute correlation for credible set purity filtering. Default is 0.8,
+#'   which is stricter than the susieR default of 0.5.
 #' @param twas_weights Whether to compute TWAS weights. Default is TRUE.
 #' @param sample_partition Sample partition for cross-validation. Default is NULL.
 #' @param max_cv_variants The maximum number of variants to be included in cross-validation. Default is -1 (no limit).
@@ -52,6 +54,7 @@ univariate_analysis_pipeline <- function(
     # fine-mapping results summary
     signal_cutoff = 0.025,
     coverage = c(0.95, 0.7, 0.5),
+    min_abs_corr = 0.8,
     finemapping_extra_opts = list(refine = TRUE),
     # TWAS weights and CV for TWAS weights
     twas_weights = TRUE,
@@ -119,6 +122,7 @@ univariate_analysis_pipeline <- function(
     res$susie_fitted, X, Y, X_scalar, Y_scalar, maf,
     secondary_coverage = if (length(coverage) > 1) coverage[-1] else NULL,
     signal_cutoff = signal_cutoff,
+    min_abs_corr = min_abs_corr,
     other_quantities = other_quantities
   )
   res <- c(res, susie_result_trimmed)
@@ -166,6 +170,8 @@ univariate_analysis_pipeline <- function(
 #' @param coverage Coverage levels for SuSiE RSS analysis (default: c(0.95, 0.7, 0.5)).
 #' @param pip_cutoff_to_skip PIP cutoff to skip imputation (default: 0).
 #' @param signal_cutoff Signal cutoff for susie_post_processor (default: 0.025).
+#' @param finemapping_opts A list of fine-mapping options: init_L, max_L, l_step, coverage, signal_cutoff,
+#'   and min_abs_corr (minimum absolute correlation for credible set purity, default 0.8; susieR default is 0.5).
 #'
 #' @return A list containing the final_result and input_rss_data.
 #'   - final_result: A list containing the results of various SuSiE RSS analyses.
@@ -180,7 +186,8 @@ rss_analysis_pipeline <- function(
     finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
     finemapping_opts = list(
       init_L = 5, max_L = 20, l_step = 5,
-      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025
+      coverage = c(0.95, 0.7, 0.5), signal_cutoff = 0.025,
+      min_abs_corr = 0.8
     ),
     impute = TRUE, impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
     pip_cutoff_to_skip = 0, remove_indels = FALSE, comment_string = "#", diagnostics = FALSE) {
@@ -246,7 +253,8 @@ rss_analysis_pipeline <- function(
       analysis_method = finemapping_method,
       coverage = pri_coverage,
       secondary_coverage = sec_coverage,
-      signal_cutoff = finemapping_opts$signal_cutoff
+      signal_cutoff = finemapping_opts$signal_cutoff,
+      min_abs_corr = finemapping_opts$min_abs_corr
     )
     if (!is.null(qc_method)) {
       res$outlier_number <- qc_results$outlier_number
@@ -299,7 +307,8 @@ rss_analysis_pipeline <- function(
             analysis_method = finemapping_method,
             coverage = pri_coverage,
             secondary_coverage = sec_coverage,
-            signal_cutoff = finemapping_opts$signal_cutoff
+            signal_cutoff = finemapping_opts$signal_cutoff,
+            min_abs_corr = finemapping_opts$min_abs_corr
           )
           if (!is.null(qc_method)) {
             bcr$outlier_number <- qc_results$outlier_number
@@ -321,7 +330,8 @@ rss_analysis_pipeline <- function(
             analysis_method = finemapping_method,
             coverage = pri_coverage,
             secondary_coverage = sec_coverage,
-            signal_cutoff = finemapping_opts$signal_cutoff
+            signal_cutoff = finemapping_opts$signal_cutoff,
+            min_abs_corr = finemapping_opts$min_abs_corr
           )
           qc_method <- NULL
           impute <- FALSE
@@ -344,7 +354,8 @@ rss_analysis_pipeline <- function(
           analysis_method = finemapping_method,
           coverage = pri_coverage,
           secondary_coverage = sec_coverage,
-          signal_cutoff = finemapping_opts$signal_cutoff
+          signal_cutoff = finemapping_opts$signal_cutoff,
+          min_abs_corr = finemapping_opts$min_abs_corr
         )
         qc_method <- NULL
         impute <- FALSE

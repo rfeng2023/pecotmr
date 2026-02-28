@@ -199,6 +199,7 @@ susie_rss_wrapper <- function(z, R, n = NULL, var_y = NULL, L = 10, max_L = 30, 
 #' @param coverage Coverage level for susie_rss analysis (default: 0.95).
 #' @param secondary_coverage Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).
 #' @param signal_cutoff Signal cutoff for susie_post_processor (default: 0.1).
+#' @param min_abs_corr Minimum absolute correlation for credible set purity filtering (default: 0.8).
 #'
 #' @return A list containing the results of the SuSiE RSS analysis based on the specified method.
 #'
@@ -232,7 +233,8 @@ susie_rss_pipeline <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 5, 
                                analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
                                coverage = 0.95,
                                secondary_coverage = c(0.7, 0.5),
-                               signal_cutoff = 0.1) {
+                               signal_cutoff = 0.1,
+                               min_abs_corr = 0.8) {
   # Check if sumstats has z-scores or (beta and se)
   if (!is.null(sumstats$z)) {
     z <- sumstats$z
@@ -257,7 +259,7 @@ susie_rss_pipeline <- function(sumstats, LD_mat, n = NULL, var_y = NULL, L = 5, 
   res <- susie_post_processor(res,
     data_x = LD_mat, data_y = list(z = z),
     signal_cutoff = signal_cutoff, secondary_coverage = secondary_coverage,
-    mode = "susie_rss"
+    min_abs_corr = min_abs_corr, mode = "susie_rss"
   )
 
   return(res)
@@ -340,6 +342,9 @@ get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "s
 #' @param signal_cutoff Cutoff value for signal identification in PIP values.
 #' @param other_quantities A list of other quantities to be added to the final object.
 #' @param prior_eff_tol Prior effective tolerance.
+#' @param min_abs_corr Minimum absolute correlation for credible set purity filtering.
+#'   Default is 0.8, which is stricter than the susieR default of 0.5. Credible sets
+#'   with purity below this threshold are excluded from the results.
 #' @param mode Specify the analysis mode: 'susie' or 'susie_rss'.
 #' @return A list containing modified SuSiE object along with additional post-processing information.
 #' @examples
@@ -390,7 +395,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
     eff_idx <- 1:max_L
   }
 
-  # modify primary CS purity from the default 0.5
+  # Re-filter primary CS purity (susieR default is 0.5, pecotmr default is 0.8)
   if (mode %in% c("susie", "mvsusie")) {
     susie_output$sets <- susie_get_cs(susie_output, X = data_x, coverage = susie_output$sets$requested_coverage, min_abs_corr = min_abs_corr)
   } else {
