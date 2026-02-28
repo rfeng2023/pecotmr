@@ -1,0 +1,75 @@
+url: https://statfungen.github.io/pecotmr
+
+template:
+ bootstrap: 5
+ light-switch: true
+ math-rendering: katex
+ bslib:
+  base_font: { google: "Roboto" }
+  heading_font: { google: "Roboto Slab" }
+  code_font: { google: "JetBrains Mono" }
+
+development:
+ mode: auto
+
+home:
+ links:
+ - text: Learn more
+   href: https://github.com/StatFunGen/pecotmr
+ - text: Report a bug
+   href: https://github.com/StatFunGen/pecotmr/issues
+
+navbar:
+ structure:
+  left: [intro, reference, articles]
+  right: [search, github, lightswitch]
+ components:
+  intro:
+   icon: fa fa-play-circle
+   text: Get Started
+   href: articles/cis-analysis.html
+   aria-label: Get started with pecotmr
+  reference:
+   icon: fa fa-file-code
+   text: Functions
+   href: reference/index.html
+   aria-label: Function reference
+  articles:
+   icon: fa fa-book-reader
+   text: Vignettes
+   href: articles/index.html
+   aria-label: Articles and vignettes
+  github:
+   icon: fab fa-github
+   href: https://github.com/StatFunGen/pecotmr
+   aria-label: View source on GitHub
+
+articles:
+  - title: "Getting Started"
+    navbar: ~
+    contents:
+    - cis-analysis
+  - title: "Analysis Pipelines"
+    desc: >
+      Detailed tutorials for colocalization, multivariate analysis,
+      and GWAS-QTL integration pipelines.
+    contents:
+    - ColocBoost_Wrapper_Pipeline
+    - mrmash-intro
+  - title: "Quality Control"
+    desc: >
+      Tools for summary statistics quality control.
+    contents:
+    - dentist
+  - title: "Enrichment Analysis"
+    contents:
+    - xqtl_enrichment
+  - title: "Resources"
+    navbar: ~
+    contents:
+    - qtl-gwas-resources
+
+footer:
+ structure:
+  left: developed_by
+  right: built_with

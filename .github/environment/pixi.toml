@@ -16,6 +16,7 @@ bioccheck = "cd $GITHUB_WORKSPACE; R -e 'BiocCheck::BiocCheck()'"
 use_major_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"major\", push = FALSE)'"
 use_minor_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"minor\", push = FALSE)'"
 use_patch_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"patch\", push = FALSE)'"
+pkgdown_build = "cd $GITHUB_WORKSPACE; R -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'"
 
 [feature.r43]
 dependencies = {"r-base" = "4.3.*"}
@@ -36,4 +37,5 @@ r44 = {features = ["r44"]}
 "r-devtools" = "*"
 "r-rcmdcheck" = "*"
 "r-covr" = "*"
+"r-pkgdown" = "*"
 "r-tidyverse" = "*"

@@ -1,4 +1,8 @@
-# pecotmr [![codecov](https://codecov.io/gh/StatFunGen/pecotmr/graph/badge.svg?token=NFH9R1OPG7)](https://codecov.io/gh/StatFunGen/pecotmr)
+# pecotmr
+
+[![CI](https://github.com/StatFunGen/pecotmr/actions/workflows/ci.yml/badge.svg)](https://github.com/StatFunGen/pecotmr/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/StatFunGen/pecotmr/graph/badge.svg?token=NFH9R1OPG7)](https://codecov.io/gh/StatFunGen/pecotmr)
+[![Website](https://github.com/StatFunGen/pecotmr/actions/workflows/pkgdown.yml/badge.svg)](https://statfungen.github.io/pecotmr)
 
 This R package, `pecotmr` implements **p**ost-GWAS **e**nrichment, **co**localization, **T**WAS and **M**endelian **R**andomization to integrate QTL and GWAS analysis, mostly based on fine-mapped single effects model although a number of other approaches are included for handy availiability in daily research.
 `pecotmr` also stands for a **p**robabilistic **eco**system consolidating a range of established and new models into a streamlined, user-friendly interface complete with well-documented examples that will help getting your analysis done by **t**o**m**o**r**row if you start working on it today!
@@ -33,21 +37,15 @@ To install using `conda` or `micromamba` for our released version,
 micromamba install -c dnachun -c conda-forge -c bioconda r-pecotmr
 ```
 
-To still use `devtools` to build `pecotmr` from source we suggest you build a local `conda` environment for pecotmr and all its dependencies,
+To still use `devtools` to build `pecotmr` from source we suggest you use [pixi](https://pixi.sh) to set up a local environment with all dependencies:
 
 ```
-cp .github/environment/environment.yaml /tmp/environment.yaml
-grep -v '{%' < .github/recipe/meta.yaml | yq .requirements.host | sed 's/^/  /' >> /tmp/environment.yaml
-micromamba create -f /tmp/environment.yaml
+.github/workflows/create_toml_from_yaml.sh .
+pixi install
+pixi shell
 ```
 
-then use 
-
-```
-micromamba activate pecotmr
-```
-
-to activate it. Now you should be able to build `pecotmr` from source.
+Now you should be able to build `pecotmr` from source.
 
 ## Developer's notes
 
@@ -61,8 +59,11 @@ the src directory, run `devtools::document()` to update the
 connected to Internet while running these commands):
 
    ```R
-   pkgdown::build_site(lazy=TRUE, examples=FALSE)
+   pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)
    ```
+
+   The website is automatically deployed to https://statfungen.github.io/pecotmr
+   on push to `main` via GitHub Actions.
 
 + To format R codes in the `R` folder,
 
