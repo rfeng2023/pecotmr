@@ -5,7 +5,13 @@
 \title{Main QUAIL pipeline
 QUAIL vQTL Analysis Pipeline}
 \usage{
-QUAIL_pipeline(genotype, rank_score, phenotype = NULL, covariates = NULL)
+QUAIL_pipeline(
+  genotype,
+  rank_score,
+  phenotype = NULL,
+  covariates = NULL,
+  phenotype_id = NULL
+)
 }
 \arguments{
 \item{genotype}{numeric matrix (n x p) of genotypes.}
