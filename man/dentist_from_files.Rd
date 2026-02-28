@@ -28,8 +28,10 @@ tab-separated, 8 columns with header: SNP A1 A2 freq beta se p N). May be gzippe
 
 \item{bfile}{PLINK binary file prefix (expects .bed/.bim/.fam files).}
 
-\item{nSample}{Sample size. If NULL, taken from the N column of the summary file
-(using the median value). Default is NULL.}
+\item{nSample}{Number of samples in the LD reference panel. If NULL (recommended),
+uses the reference panel size from the genotype matrix. This controls the SVD
+truncation rank K = min(idx_size, nSample) * propSVD. Note: this is the reference
+panel size, NOT the GWAS sample size. Default is NULL.}
 
 \item{window_size}{Window size in base pairs. Default is 2000000.}
 

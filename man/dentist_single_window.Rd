@@ -27,8 +27,9 @@ dentist_single_window(
 \item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
 \code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.}
 
-\item{nSample}{Number of samples. Required when \code{R} is provided; inferred
-from \code{X} when \code{X} is provided.}
+\item{nSample}{Number of samples in the LD reference panel (NOT the GWAS sample
+size). Controls the SVD truncation rank. Required when \code{R} is provided;
+inferred from \code{X} when \code{X} is provided.}
 
 \item{pValueThreshold}{P-value threshold for outlier detection. Default is 5e-8.}
 

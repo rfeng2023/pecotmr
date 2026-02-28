@@ -46,8 +46,9 @@ resolve_LD_input <- function(R = NULL, X = NULL, nSample = NULL, need_nSample = 
 #' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
 #' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
 #'   \code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.
-#' @param nSample The number of samples. Required when \code{R} is provided; inferred
-#'   from \code{X} when \code{X} is provided.
+#' @param nSample The number of samples in the LD reference panel (NOT the GWAS sample
+#'   size). This controls the SVD truncation rank K = min(idx_size, nSample) * propSVD.
+#'   Required when \code{R} is provided; inferred from \code{X} when \code{X} is provided.
 #' @param window_size The size of the window for dividing the genomic region. Default is 2000000.
 #' @param pValueThreshold The p-value threshold for significance. Default is 5e-8.
 #' @param propSVD The proportion of singular value decomposition (SVD) to use. Default is 0.4.
@@ -154,8 +155,9 @@ dentist <- function(sum_stat, R = NULL, X = NULL, nSample = NULL,
 #' @param R Square LD correlation matrix. Provide either \code{R} or \code{X}.
 #' @param X Genotype matrix (samples x SNPs). If provided, LD is computed via
 #'   \code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.
-#' @param nSample Number of samples. Required when \code{R} is provided; inferred
-#'   from \code{X} when \code{X} is provided.
+#' @param nSample Number of samples in the LD reference panel (NOT the GWAS sample
+#'   size). Controls the SVD truncation rank. Required when \code{R} is provided;
+#'   inferred from \code{X} when \code{X} is provided.
 #' @param pValueThreshold P-value threshold for outlier detection. Default is 5e-8.
 #' @param propSVD SVD truncation proportion. Default is 0.4.
 #' @param gcControl Logical; apply genomic control. Default is FALSE.
@@ -531,10 +533,6 @@ merge_windows <- function(dentist_result_by_window, window_divided_res) {
       filter(index_global >= window_divided_res$fillStartIdx[k] & index_global < window_divided_res$fillEndIdx[k])
     merged_results <- rbind(merged_results, extracted_results)
   }
-  # Filter out un-imputed variants (imputed_z == 0 and rsq == 0) after merging,
-  # matching the original DENTIST binary which skips these when writing output.
-  merged_results <- merged_results %>%
-    filter(!(imputed_z == 0 & rsq == 0))
   return(merged_results)
 }
 
@@ -593,8 +591,10 @@ read_dentist_sumstat <- function(gwas_summary) {
 #' @param gwas_summary Path to the GWAS summary statistics file (DENTIST format:
 #'   tab-separated, 8 columns with header: SNP A1 A2 freq beta se p N). May be gzipped.
 #' @param bfile PLINK binary file prefix (expects .bed/.bim/.fam files).
-#' @param nSample Sample size. If NULL, taken from the N column of the summary file
-#'   (using the median value). Default is NULL.
+#' @param nSample Number of samples in the LD reference panel. If NULL (recommended),
+#'   uses the reference panel size from the genotype matrix. This controls the SVD
+#'   truncation rank K = min(idx_size, nSample) * propSVD. Note: this is the reference
+#'   panel size, NOT the GWAS sample size. Default is NULL.
 #' @param window_size Window size in base pairs. Default is 2000000.
 #' @param pValueThreshold P-value threshold for outlier detection. Default is 5.0369e-8.
 #' @param propSVD SVD truncation proportion. Default is 0.4.

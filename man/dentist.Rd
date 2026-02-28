@@ -6,8 +6,9 @@
 \usage{
 dentist(
   sum_stat,
-  LD_mat,
-  nSample,
+  R = NULL,
+  X = NULL,
+  nSample = NULL,
   window_size = 2e+06,
   pValueThreshold = 5.0369e-08,
   propSVD = 0.4,
@@ -23,9 +24,14 @@ dentist(
 \arguments{
 \item{sum_stat}{A data frame containing summary statistics, including 'pos' or 'position' and 'z' or 'zscore' columns.}
 
-\item{LD_mat}{A matrix containing LD (linkage disequilibrium) information.}
+\item{R}{Square LD correlation matrix. Provide either \code{R} or \code{X}.}
 
-\item{nSample}{The number of samples.}
+\item{X}{Genotype matrix (samples x SNPs). If provided, LD is computed via
+\code{compute_LD(X)} and \code{nSample} defaults to \code{nrow(X)}.}
+
+\item{nSample}{The number of samples in the LD reference panel (NOT the GWAS sample
+size). This controls the SVD truncation rank K = min(idx_size, nSample) * propSVD.
+Required when \code{R} is provided; inferred from \code{X} when \code{X} is provided.}
 
 \item{window_size}{The size of the window for dividing the genomic region. Default is 2000000.}
 
@@ -81,6 +87,6 @@ parameter affects the iterative filtering in two ways:
 }
 \examples{
 # Example usage of dentist
-dentist(sum_stat, LD_mat, nSample)
+dentist(sum_stat, R = LD_mat, nSample = nSample)
 
 }
