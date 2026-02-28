@@ -605,9 +605,9 @@ read_dentist_sumstat <- function(gwas_summary) {
 #' @param ncpus Number of CPU threads. Default is 1.
 #' @param correct_chen_et_al_bug Logical; correct known bugs in original DENTIST. Default is TRUE.
 #' @param min_dim Minimum number of SNPs per window. Default is 2000.
-#' @param match_binary_LD Logical; use GCTA-style LD computation and raw B-allele
+#' @param use_gcta_LD Logical; use GCTA-style LD computation and raw B-allele
 #'   counts to match the DENTIST binary's exact floating-point behavior. Requires
-#'   snpStats. Default is FALSE.
+#'   snpStats. Default is FALSE; set to TRUE when comparing against the binary.
 #' @param verbose Logical; print progress messages. Default is TRUE.
 #'
 #' @return A list with components:
@@ -650,7 +650,7 @@ dentist_from_files <- function(gwas_summary,
                                 ncpus = 1,
                                 correct_chen_et_al_bug = TRUE,
                                 min_dim = 2000,
-                                match_binary_LD = FALSE,
+                                use_gcta_LD = FALSE,
                                 verbose = TRUE) {
   # 1. Read summary stats
   if (verbose) message("Reading summary statistics...")
@@ -722,21 +722,21 @@ dentist_from_files <- function(gwas_summary,
 
   # 6. Load genotypes and compute LD
   if (verbose) message("Loading genotype data...")
-  if (match_binary_LD) {
+  if (use_gcta_LD) {
     # Load raw B-allele counts (as in the .bed file) to match the DENTIST
     # binary's exact floating-point behavior via GCTA-style LD computation.
     if (!requireNamespace("snpStats", quietly = TRUE)) {
-      stop("snpStats is required for match_binary_LD = TRUE")
+      stop("snpStats is required for use_gcta_LD = TRUE")
     }
     geno <- snpStats::read.plink(bfile)
-    X <- as(geno$genotypes, "numeric")  # B-allele counts, matching binary
+    X <- as(geno$genotypes, "numeric")  # B-allele counts, matching DENTIST software
   } else {
     X <- load_genotype_region(bfile, region = NULL)
   }
 
   # Determine sample size — use reference panel size (nrow of genotype matrix),
   # NOT the GWAS sample size from the summary stats N column.
-  # The original DENTIST binary uses ref.N (number of samples in the .fam file)
+  # The original DENTIST software uses ref.N (number of samples in the .fam file)
   # for the K = min(idx.size(), nSample) * propSVD truncation.
   if (is.null(nSample)) {
     nSample <- as.integer(nrow(X))
@@ -773,8 +773,8 @@ dentist_from_files <- function(gwas_summary,
                                 ncol(X_sub), nrow(X_sub), n_missing))
 
   # Compute LD matrix.
-  if (match_binary_LD) {
-    # Use C++ GCTA-style computation matching the binary's bfileOperations.cpp
+  if (use_gcta_LD) {
+    # Use C++ GCTA-style computation matching the DENTIST software bfileOperations.cpp
     # exactly: per-pair missing data handling, sequential sample accumulation,
     # same floating-point operation order.
     N_kept <- (nrow(X_sub) %/% 4L) * 4L
@@ -839,18 +839,18 @@ dentist_from_files <- function(gwas_summary,
 
 #' Parse DENTIST Binary Output Files
 #'
-#' Reads the output files produced by the DENTIST C++ binary and returns
-#' a structured data frame. Useful for comparing binary output against
+#' Reads the output files produced by the DENTIST C++ software and returns
+#' a structured data frame. Useful for comparing DENTIST output against
 #' \code{\link{dentist_from_files}} results.
 #'
-#' @param output_prefix The output prefix used when running the DENTIST binary
+#' @param output_prefix The output prefix used when running the DENTIST software
 #'   (the \code{--out} argument).
 #' @param pValueThreshold P-value threshold used to determine outlier status.
 #'   Default is 5e-8.
 #' @return A data frame with columns: SNP, test_stat, neg_log10_p, is_duplicate, outlier.
 #'
 #' @details
-#' The DENTIST binary (non-debug mode) writes a \code{.DENTIST.full.txt} file with
+#' The DENTIST software (non-debug mode) writes a \code{.DENTIST.full.txt} file with
 #' 4 tab-separated columns (no header): rsID, stat/lambda, -log10(pvalue), isDuplicate.
 #' It also writes a \code{.DENTIST.short.txt} file listing outlier SNP IDs (one per line).
 #'

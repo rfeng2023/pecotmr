@@ -18,7 +18,7 @@ dentist_from_files(
   ncpus = 1,
   correct_chen_et_al_bug = TRUE,
   min_dim = 2000,
-  match_binary_LD = FALSE,
+  use_gcta_LD = FALSE,
   verbose = TRUE
 )
 }
@@ -53,9 +53,9 @@ panel size, NOT the GWAS sample size. Default is NULL.}
 
 \item{min_dim}{Minimum number of SNPs per window. Default is 2000.}
 
-\item{match_binary_LD}{Logical; use GCTA-style LD computation and raw B-allele
+\item{use_gcta_LD}{Logical; use GCTA-style LD computation and raw B-allele
 counts to match the DENTIST binary's exact floating-point behavior. Requires
-snpStats. Default is FALSE.}
+snpStats. Default is FALSE; set to TRUE when comparing against the binary.}
 
 \item{verbose}{Logical; print progress messages. Default is TRUE.}
 }

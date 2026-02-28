@@ -41,7 +41,9 @@ slalom <- function(zScore, R = NULL, X = NULL, standard_error = rep(1, length(zS
     stop("LD_mat must be a square matrix matching the length of zScore.")
   }
 
-  pvalue <- 2 * pnorm(abs(zScore), lower.tail = FALSE)
+  # One-sided p-value matching the original Python implementation (stats.norm.cdf).
+#' This selects the most negative z-score as lead when lead_variant_choice == "pvalue".
+  pvalue <- pnorm(zScore)
 
   logSumExp <- function(x) {
     max_x <- max(x, na.rm = TRUE)
