@@ -7,7 +7,7 @@
 parse_dentist_output(output_prefix, pValueThreshold = 5e-08)
 }
 \arguments{
-\item{output_prefix}{The output prefix used when running the DENTIST binary
+\item{output_prefix}{The output prefix used when running the DENTIST software
 (the \code{--out} argument).}
 
 \item{pValueThreshold}{P-value threshold used to determine outlier status.
@@ -17,12 +17,12 @@ Default is 5e-8.}
 A data frame with columns: SNP, test_stat, neg_log10_p, is_duplicate, outlier.
 }
 \description{
-Reads the output files produced by the DENTIST C++ binary and returns
-a structured data frame. Useful for comparing binary output against
+Reads the output files produced by the DENTIST C++ software and returns
+a structured data frame. Useful for comparing DENTIST output against
 \code{\link{dentist_from_files}} results.
 }
 \details{
-The DENTIST binary (non-debug mode) writes a \code{.DENTIST.full.txt} file with
+The DENTIST software (non-debug mode) writes a \code{.DENTIST.full.txt} file with
 4 tab-separated columns (no header): rsID, stat/lambda, -log10(pvalue), isDuplicate.
 It also writes a \code{.DENTIST.short.txt} file listing outlier SNP IDs (one per line).
 }

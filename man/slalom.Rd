@@ -52,8 +52,6 @@ Provide either an LD correlation matrix \code{R} or a genotype matrix \code{X}
 (from which LD is derived automatically via \code{compute_LD}).
 }
 \examples{
-# Assuming `zScore` is your vector of z-scores, `R` is your LD matrix,
-# and optionally `standard_error` is your vector of standard errors:
 results <- slalom(zScore, R = R, standard_error = standard_error)
 }
 \seealso{

@@ -40,6 +40,10 @@ susie_post_processor(
 
 \item{prior_eff_tol}{Prior effective tolerance.}
 
+\item{min_abs_corr}{Minimum absolute correlation for credible set purity filtering.
+Default is 0.8, which is stricter than the susieR default of 0.5. Credible sets
+with purity below this threshold are excluded from the results.}
+
 \item{mode}{Specify the analysis mode: 'susie' or 'susie_rss'.}
 }
 \value{

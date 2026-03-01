@@ -24,6 +24,7 @@ multivariate_analysis_pipeline(
   mvsusie_max_iter = 200,
   signal_cutoff = 0.025,
   coverage = c(0.95, 0.7, 0.5),
+  min_abs_corr = 0.8,
   twas_weights = TRUE,
   sample_partition = NULL,
   max_cv_variants = -1,
@@ -60,6 +61,9 @@ multivariate_analysis_pipeline(
 \item{signal_cutoff}{Cutoff value for signal identification in PIP values for susie_post_processor. Default is 0.025.}
 
 \item{coverage}{A vector of coverage probabilities, with the first element being the primary coverage and the rest being secondary coverage probabilities for credible set refinement. Defaults to c(0.95, 0.7, 0.5).}
+
+\item{min_abs_corr}{Minimum absolute correlation for credible set purity filtering. Default is 0.8,
+which is stricter than the susieR default of 0.5.}
 
 \item{sample_partition}{Sample partition for cross-validation.}
 

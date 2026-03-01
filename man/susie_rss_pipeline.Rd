@@ -15,7 +15,8 @@ susie_rss_pipeline(
   analysis_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
   coverage = 0.95,
   secondary_coverage = c(0.7, 0.5),
-  signal_cutoff = 0.1
+  signal_cutoff = 0.1,
+  min_abs_corr = 0.8
 )
 }
 \arguments{
@@ -40,6 +41,8 @@ susie_rss_pipeline(
 \item{secondary_coverage}{Secondary coverage levels for susie_rss analysis (default: c(0.7, 0.5)).}
 
 \item{signal_cutoff}{Signal cutoff for susie_post_processor (default: 0.1).}
+
+\item{min_abs_corr}{Minimum absolute correlation for credible set purity filtering (default: 0.8).}
 }
 \value{
 A list containing the results of the SuSiE RSS analysis based on the specified method.

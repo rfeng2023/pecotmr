@@ -18,7 +18,7 @@ rss_analysis_pipeline(
   qc_method = c("dentist", "slalom"),
   finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
   finemapping_opts = list(init_L = 5, max_L = 20, l_step = 5, coverage = c(0.95, 0.7,
-    0.5), signal_cutoff = 0.025),
+    0.5), signal_cutoff = 0.025, min_abs_corr = 0.8),
   impute = TRUE,
   impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
   pip_cutoff_to_skip = 0,
@@ -50,6 +50,9 @@ Each region should be in the format "chrom:start-end" (e.g., "1:1000000-2000000"
 \item{region_name_col}{Filter this specific column for the extract_region_name.}
 
 \item{qc_method}{Quality control method to use. Options are "dentist" or "slalom" (default: "dentist").}
+
+\item{finemapping_opts}{A list of fine-mapping options: init_L, max_L, l_step, coverage, signal_cutoff,
+and min_abs_corr (minimum absolute correlation for credible set purity, default 0.8; susieR default is 0.5).}
 
 \item{impute}{Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).}
 

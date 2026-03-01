@@ -24,8 +24,6 @@
 #' @return A list containing the annotated LD matrix with ABF results, credible sets,
 #'   lead variant, and DENTIST-S statistics; and a summary dataframe with aggregate statistics.
 #' @examples
-#' # Assuming `zScore` is your vector of z-scores, `R` is your LD matrix,
-#' # and optionally `standard_error` is your vector of standard errors:
 #' results <- slalom(zScore, R = R, standard_error = standard_error)
 #' @seealso \code{\link{dentist_single_window}}, \code{\link{resolve_LD_input}}
 #' @export
@@ -42,7 +40,7 @@ slalom <- function(zScore, R = NULL, X = NULL, standard_error = rep(1, length(zS
   }
 
   # One-sided p-value matching the original Python implementation (stats.norm.cdf).
-#' This selects the most negative z-score as lead when lead_variant_choice == "pvalue".
+  # This selects the most negative z-score as lead when lead_variant_choice == "pvalue".
   pvalue <- pnorm(zScore)
 
   logSumExp <- function(x) {

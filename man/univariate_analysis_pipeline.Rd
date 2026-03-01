@@ -22,6 +22,7 @@ univariate_analysis_pipeline(
   l_step = 5,
   signal_cutoff = 0.025,
   coverage = c(0.95, 0.7, 0.5),
+  min_abs_corr = 0.8,
   finemapping_extra_opts = list(refine = TRUE),
   twas_weights = TRUE,
   sample_partition = NULL,
@@ -65,6 +66,9 @@ univariate_analysis_pipeline(
 \item{signal_cutoff}{Cutoff value for signal identification in PIP values. Default is 0.025.}
 
 \item{coverage}{A vector of coverage probabilities for credible sets. Default is c(0.95, 0.7, 0.5).}
+
+\item{min_abs_corr}{Minimum absolute correlation for credible set purity filtering. Default is 0.8,
+which is stricter than the susieR default of 0.5.}
 
 \item{twas_weights}{Whether to compute TWAS weights. Default is TRUE.}
 
