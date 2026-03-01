@@ -38,6 +38,7 @@ Imports:
 Suggests:
     coda,
     GBJ,
+    R.utils,
     Rfast,
     flashier,
     fsusieR,
