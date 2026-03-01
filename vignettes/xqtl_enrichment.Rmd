@@ -1,11 +1,10 @@
-
 ---
 title: "Enrichment analysis of molecular QTL in genetic variants associated with complex traits"
 author: "Ru Feng"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{intro-to-pecotmr}
+  %\VignetteIndexEntry{Enrichment analysis of molecular QTL in genetic variants associated with complex traits}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -15,56 +14,64 @@ This vignette demonstrates the enrichment analysis part of the `pecotmr` package
 2) Causal QTL are sampled from SuSiE single effects, not signal clusters;
 3) Allow a variant to be QTL for not only multiple conditions (eg cell types) but also multiple regions (eg genes).
 
+The example uses de-identified data shipped with the package. All sample names,
+variant positions, and identifiers are synthetic.
 
 ## Set up environment and Load data
 
-Load the `pecotmr` package for this enrichment analysis, abd load the susieR package for data checking and visualization
+Load the `pecotmr` package for this enrichment analysis.
 ```{r load-pkgs}
 library(pecotmr)
-library(susieR)
 ```
 
-Load fine mapping results. 
+Load fine-mapping results from the package example data and write them to
+temporary RDS files, since `xqtl_enrichment_wrapper` expects file paths.
 ```{r}
-gwas_path <- "gwas_toy.rds"
-qtl_path <- "QTL_toy.rds"
-gwas <- readRDS(gwas_path)
-qtl <- readRDS(qtl_path)
+data(gwas_finemapping_example)
+data(qtl_finemapping_example)
+gwas_path <- tempfile(fileext = ".rds")
+qtl_path <- tempfile(fileext = ".rds")
+saveRDS(gwas_finemapping_example, gwas_path)
+saveRDS(qtl_finemapping_example, qtl_path)
+gwas <- gwas_finemapping_example
+qtl <- qtl_finemapping_example
 ```
 
 ## Input data requirements
 
 ### GWAS data requirements
-In the GWAS toy data, the file is stored as a list, with the fine mapping results already stored under the first layer.
+In the GWAS data, the file is stored as a list, with the fine mapping results already stored under the first layer.
 ```{r}
 names(gwas[[1]])
 ```
 Posterior inclusion probabilities of GWAS data:
 ```{r}
-susie_plot(gwas[[1]], y = "PIP")
+plot(gwas[[1]]$pip, ylab = "PIP", xlab = "Variant index", main = "GWAS PIPs", pch = 16, cex = 0.6)
 ```
 
 ### QTL data requirements
-In the QTL toy data, the file is stored as a list and is more complicated. The first layer is named as the molecular trait object ID (gene), followed by different contexts as the second layer (e.g. Mic). The variant names and fine mapping results can be found under these contexts (`variant_names` and `susie_result_trimmed`). 
+In the QTL data, the file is stored as a list and is more complicated. The first layer is named as the molecular trait region ID, followed by different contexts as the second layer. The variant names and fine mapping results can be found under these contexts (`variant_names` and `susie_result_trimmed`).
 ```{r}
 names(qtl)
-names(qtl[[1]])
-names(qtl[[1]][["Mic"]])
-names(qtl[[1]][["Mic"]][["susie_result_trimmed"]])
+names(qtl[["region_1"]])
+names(qtl[["region_1"]][["context_1"]])
+names(qtl[["region_1"]][["context_1"]][["susie_result_trimmed"]])
 ```
 Posterior inclusion probabilities of QTL data:
 ```{r}
-susie_plot(qtl[[1]][["Mic"]][["susie_result_trimmed"]], y = "PIP")
+plot(qtl[["region_1"]][["context_1"]][["susie_result_trimmed"]]$pip,
+     ylab = "PIP", xlab = "Variant index", main = "QTL PIPs", pch = 16, cex = 0.6)
 ```
 
-## Perform enrichment analysis 
-The input for `xqtl_enrichment_wrapper` requires the paths for GWAS and QTL fine mapping data. You need to specify the list name of SuSiE results in each dataset as `xqtl_finemapping_obj` and the list name of variant names as `xqtl_varname_obj`. For example, if SuSiE results for QTL data are under `qtl[[1]]$Mic$susie_result_trimmed`, then `xqtl_finemapping_obj` would be `c("Mic", "susie_result_trimmed")`, and `xqtl_varname_obj` would be `c("Mic", "variant_names")` since the variant names are stored directly under `Mic`. 
+## Perform enrichment analysis
+The input for `xqtl_enrichment_wrapper` requires the paths for GWAS and QTL fine mapping data. You need to specify the list name of SuSiE results in each dataset as `xqtl_finemapping_obj` and the list name of variant names as `xqtl_varname_obj`. For example, if SuSiE results for QTL data are under `qtl[["region_1"]][["context_1"]][["susie_result_trimmed"]]`, then `xqtl_finemapping_obj` would be `c("context_1", "susie_result_trimmed")`, and `xqtl_varname_obj` would be `c("context_1", "variant_names")` since the variant names are stored directly under `context_1`.
 For GWAS data, the fine mapping results and variant names are stored under the first layer directly, so you do not need to specify `gwas_finemapping_obj` and `gwas_varname_obj`. However, if your data does not follow this structure, you may need to specify these parameters accordingly.
 
 ```{r}
 enrich_res <- xqtl_enrichment_wrapper(
   gwas_files = gwas_path, xqtl_files = qtl_path,
-  xqtl_finemapping_obj = c("Mic", "susie_result_trimmed"), xqtl_varname_obj = c("Mic", "variant_names")
+  xqtl_finemapping_obj = c("context_1", "susie_result_trimmed"),
+  xqtl_varname_obj = c("context_1", "variant_names")
 )
 print(enrich_res[[1]])
 print(head(enrich_res[["unused_xqtl_variants"]][[1]]))

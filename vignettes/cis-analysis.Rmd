@@ -11,7 +11,9 @@ vignette: >
 
 
 Here we demonstrate the use of the `pecotmr` package to perform
-a version of colocalization, TWAS and MR between a pair of molecular QTL and GWAS.
+colocalization, TWAS and enrichment analysis between a pair of molecular QTL
+and GWAS using de-identified example data shipped with the package.
+All sample names, variant positions, and identifiers are synthetic.
 
 ## Set up your environment
 
@@ -24,8 +26,10 @@ library(pecotmr)
 ## Load data
 
 ```{r}
-gwas = readRDS("CLU_gwas.rds")
-eqtl = readRDS("pseudo_bulk_CLU.ENSG00000120885.rds")
+data(gwas_sumstats_example)
+data(eqtl_region_example)
+gwas <- gwas_sumstats_example
+eqtl <- eqtl_region_example
 ```
 
 ```{r}
@@ -37,7 +41,7 @@ names(eqtl)
 ```
 
 ```{r}
-head(eqtl$X)
+head(eqtl$X[, 1:5])
 ```
 
 ```{r}
@@ -49,8 +53,6 @@ dim(eqtl$X)
 ```
 
 ## Fine-mapping using SuSiE
-
-In FunGen-xQTL we have a [simple pipeline](https://github.com/StatFunGen/xqtl-pipeline/blob/main/code/fine_mapping/SuSiE/SuSiE.ipynb) for this.
 
 ```{r}
 library(susieR)
@@ -67,7 +69,7 @@ get_cs_index <- function(snps_idx, fitted_data) {
 }
 signal_cutoff = 0.1
 coverage = 0.7
-susie_res <- susie(eqtl$X, eqtl$y_res, 
+susie_res <- susie(eqtl$X, eqtl$y_res,
                  L=20,
                  max_iter=500,
                  estimate_residual_variance=TRUE,
@@ -89,57 +91,42 @@ compute_maf <- function(geno){
 }
 variants_index = c(which(susie_res$pip >= signal_cutoff), unlist(susie_res$sets$cs)) %>% unique %>% sort
 maf = apply(eqtl$X, 2, compute_maf)[variants_index]
-all_variants = gsub("_",":",names(susie_res$pip))
-variants = gsub("_",":",names(susie_res$pip)[variants_index])
+all_variants = colnames(eqtl$X)
+variants = all_variants[variants_index]
 pip = susie_res$pip[variants_index]
 cs_info = map_int(variants_index, ~get_cs_index(.x, susie_res))
 cs_index = ifelse(is.na(cs_info), 0, str_replace(names(susie_res$sets$cs)[cs_info], "L", "") %>% as.numeric)
 univariate_res = univariate_regression(eqtl$X[, variants_index, drop=F], eqtl$y_res)
 # here betahat and sebetahat were computed from standardized X and Y
 susie_res$top_loci = cbind(variants, maf, univariate_res$betahat, univariate_res$sebetahat, pip, cs_index)
-colnames(susie_res$top_loci) = c("variant_id", "maf", "bhat", "sbhat", "pip", "cs_index_primary")#, "cs_index_secondary")
+colnames(susie_res$top_loci) = c("variant_id", "maf", "bhat", "sbhat", "pip", "cs_index_primary")
 rownames(susie_res$top_loci) = NULL
 ```
 
 ```{r}
-susie_res$top_loci # to test you can set it to 1) 0.1 and 0.95 vs 2) 0.1 and 0.2
-# parameter: default_coverage = 0.95
-# parameter: secondary_coverage = 0.7
-# parameter: signal_cutoff = 0.1
+susie_res$top_loci
 ```
 
-```{r}
-pnorm(-0.122514739342209/0.0249868671221125)
-```
-
-PIP of the two SNPs of interest are:
+Top PIP variants:
 
 ```{r}
-susie_res$pip["chr8:27608798_C_T"]
-```
-
-```{r}
-susie_res$pip["chr8:27637095_G_A"]
+sort(susie_res$pip, decreasing = TRUE)[1:5]
 ```
 
 ## TWAS
 
-Use SuSiE,
+Use SuSiE weights,
 
 ```{r}
 R = cor(eqtl$X)
 ```
 
 ```{r}
-devtools::load_all("~/GIT/software/pecotmr")
+weights = susie_weights(susie_fit = susie_res)
 ```
 
 ```{r}
-weights = susie_weights(susie_res)
-```
-
-```{r}
-twas_z(weights, gwas$Z, R=R)
+twas_z(weights, gwas$z, R=R)
 ```
 
 ```{r}
@@ -161,15 +148,15 @@ plot(weights)
 ```
 
 ```{r}
-twas_z(weights, gwas$Z, R=R)
+twas_z(weights, gwas$z, R=R)
 ```
 
-Use elastic net
+Use elastic net (alpha=0.5),
 
 ```{r}
-weights = glmnet_weights(eqtl$X, eqtl$y_res)
+weights = glmnet_weights(eqtl$X, eqtl$y_res, alpha=0.5)
 cor(eqtl$X%*%weights, eqtl$y_res)^2
-twas_z(weights, gwas$Z, R=R)
+twas_z(weights, gwas$z, R=R)
 ```
 
 ```{r}
@@ -179,36 +166,22 @@ plot(weights)
 Use LASSO,
 
 ```{r}
-weights = glmnet_weights(eqtl$X, eqtl$y_res,alpha=1)
+weights = glmnet_weights(eqtl$X, eqtl$y_res, alpha=1)
 cor(eqtl$X%*%weights, eqtl$y_res)^2
-twas_z(weights, gwas$Z, R=R)
+twas_z(weights, gwas$z, R=R)
 ```
 
 ```{r}
 plot(weights)
 ```
 
-Use varbvs,
+Use mr.ash,
 
 ```{r}
-library(varbvs)
-twas_varbvs = function(X,y,z,R=NULL) {
-    if (is.null(R)) R = cor(X)
-    weights = varbvs(X,Z=NULL,y,logodds = seq(-3,-1,0.1),verbose=F)$beta
-    print(cor(X%*%weights, y)^2)
-    twas_z(weights, z, R)
-}
-
-twas_varbvs(eqtl$X,eqtl$y_res, gwas$Z, R=R)
-```
-
-Use mr.ash
-
-```{r}
-lasso.weights = glmnet_weights(eqtl$X, eqtl$y_res,alpha=1)
+lasso.weights = glmnet_weights(eqtl$X, eqtl$y_res, alpha=1)
 weights = mrash_weights(eqtl$X, eqtl$y_res, init_prior_sd=TRUE, beta.init=lasso.weights)
 cor(eqtl$X%*%weights, eqtl$y_res)^2
-twas_z(weights, gwas$Z, R=R)
+twas_z(weights, gwas$z, R=R)
 ```
 
 ```{r}
@@ -218,18 +191,23 @@ plot(weights)
 ```{r}
 weights = mrash_weights(eqtl$X, eqtl$y_res, init_prior_sd=FALSE, beta.init=lasso.weights)
 cor(eqtl$X%*%weights, eqtl$y_res)^2
-twas_z(weights, gwas$Z, R=R)
+twas_z(weights, gwas$z, R=R)
 ```
 
 ```{r}
 plot(weights)
 ```
 
-Enrichment analysis 
+## Enrichment analysis
 
 ```{r}
-gwas_path <- "gwas_toy.rds"
-qtl_path <- "QTL_toy.rds"
+data(gwas_finemapping_example)
+data(qtl_finemapping_example)
+gwas_path <- tempfile(fileext = ".rds")
+qtl_path <- tempfile(fileext = ".rds")
+saveRDS(gwas_finemapping_example, gwas_path)
+saveRDS(qtl_finemapping_example, qtl_path)
 xqtl_enrichment_wrapper(gwas_files = gwas_path, xqtl_files = qtl_path,
-                        xqtl_finemapping_obj = c("Mic", "susie_result_trimmed"), xqtl_varname_obj = c("Mic", "variant_names"))
+                        xqtl_finemapping_obj = c("context_1", "susie_result_trimmed"),
+                        xqtl_varname_obj = c("context_1", "variant_names"))
 ```

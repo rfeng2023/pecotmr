@@ -67,20 +67,23 @@ str(prior_matrices)
 ```
 
 
-## Cross-Validation to Select Imputable Genes 
+## Cross-Validation to Select Imputable Genes
 
-A sample partition need to be provided if intend to perform cross-validation. We will first 
-partition samples for 5 fold cross validation, which will be later used to compute univariate 
-summary statistics and prior grids, then to fit mr.mash for weight matrix computation. 
+**Note:** The code below requires the `mr.mash.alpha` package. These chunks
+are not executed during the vignette build but are shown for reference.
+
+A sample partition need to be provided if intend to perform cross-validation. We will first
+partition samples for 5 fold cross validation, which will be later used to compute univariate
+summary statistics and prior grids, then to fit mr.mash for weight matrix computation.
 This step computes `sumstats`, `prior_grid`, and prior weights matrices on the fly to fit
-*`mr.mash`*. Additionally, we fit mr.mash with pre-computed mixture prior matrices to compute 
-weight matrices. 
+*`mr.mash`*. Additionally, we fit mr.mash with pre-computed mixture prior matrices to compute
+weight matrices.
 
-A simple sample partition can be obtained as below: 
-```{r}
+A simple sample partition can be obtained as below:
+```{r, eval=FALSE}
 set.seed(999)
 ```
-```{r}
+```{r, eval=FALSE}
 sampleid <- rownames(X)
 k_fold <- 5
 Fold <-sample(rep(1:k_fold, length.out=length(sampleid)))
@@ -88,39 +91,39 @@ sample_partition <- data.frame(Sample=sampleid, Fold=Fold)
 ```
 
 
-To perform cross-validation, either `fold` or `sample_partitions` must be provided. If 
-both `fold` and `sample_partitions` are provided, we will partition samples by the provided 
-`sample_partitions`. Via cross-validation, we evaluate prediction accuracy to select genes 
-that are imputable of the gene expression. We will then use these selected genes to perform TWAS 
-analysis.  
+To perform cross-validation, either `fold` or `sample_partitions` must be provided. If
+both `fold` and `sample_partitions` are provided, we will partition samples by the provided
+`sample_partitions`. Via cross-validation, we evaluate prediction accuracy to select genes
+that are imputable of the gene expression. We will then use these selected genes to perform TWAS
+analysis.
 
 
-```{r}
+```{r, eval=FALSE}
 methods <- list(mrmash_weights = list(data_driven_prior_matrices=prior_matrices))
 weight <- twas_weights_cv(X=X,Y=Y,fold=5, weight_methods=methods)
 ```
 
-In the case of providing `sample_partitions`. 
+In the case of providing `sample_partitions`.
 
-```{r}
+```{r, eval=FALSE}
 methods <- list(mrmash_weights = list(data_driven_prior_matrices=prior_matrices))
-weight_cv <- twas_weights_cv(X=X,Y=Y, 
+weight_cv <- twas_weights_cv(X=X,Y=Y,
                           sample_partition=sample_partition, weight_methods=methods)
 
 str(weight_cv)
 ```
 
 
-The wrapper function returns a list of results, including `sample_partition` and `prediction` which 
-is predicted Y matrices, as well as cross-validation evaluation metrics for each method across 
-conditions, including corr, adj_rsq, adj_rsq_pval, RMSE, MAE, and the `time_elapsed` which is 
-the time spent on computing weights and performance evaluation on the prediction accuracy with 
-5 fold cross-validation. 
+The wrapper function returns a list of results, including `sample_partition` and `prediction` which
+is predicted Y matrices, as well as cross-validation evaluation metrics for each method across
+conditions, including corr, adj_rsq, adj_rsq_pval, RMSE, MAE, and the `time_elapsed` which is
+the time spent on computing weights and performance evaluation on the prediction accuracy with
+5 fold cross-validation.
 
-Imputable genes were selected based on the prediction accuracy threshold of p-values determined 
+Imputable genes were selected based on the prediction accuracy threshold of p-values determined
 by Bonferroni correction and selected RMSE cut-off values.
 
-```{r}
+```{r, eval=FALSE}
 weight_cv$performance
 
 ```
@@ -133,20 +136,20 @@ We will then compute weights for these selected genes for TWAS analysis.
 
 
 ## Compute Weights for Imputable Genes
-Here we compute weight for imputable genes without cross-validation. 
+Here we compute weight for imputable genes without cross-validation.
 
-```{r}
+```{r, eval=FALSE}
 weight_methods <- list(mrmash_weights = list(data_driven_prior_matrices=prior_matrices))
-    
+
 weight <- twas_weights(X=X,Y=Y,weight_methods=weight_methods)
- 
+
 head(weight[["mrmash_weights"]])
 ```
 
 FIXME: Anqi, please add some visualization and comparison with univariate results
 
 
-```{r}
+```{r, eval=FALSE}
 detach(multitrait_data)
 rm(multitrait_data)
 ```
