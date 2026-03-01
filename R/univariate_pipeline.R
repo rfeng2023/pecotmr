@@ -163,7 +163,7 @@ univariate_analysis_pipeline <- function(
 #' @param L Initial number of causal configurations to consider in the analysis (default: 8).
 #' @param max_L Maximum number of causal configurations to consider when dynamically adjusting L (default: 20).
 #' @param l_step Step size for increasing L when the limit is reached during dynamic adjustment (default: 5).
-#' @param qc_method Quality control method to use. Options are "dentist" or "slalom" (default: "dentist").
+#' @param qc_method Quality control method to use. Options are "slalom" or "dentist" (default: "slalom").
 #' @param analysis_method Analysis method to use. Options are "susie_rss", "single_effect", or "bayesian_conditional_regression" (default: "susie_rss").
 #' @param impute Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).
 #' @param impute_opts A list of imputation options including rcond, R2_threshold, and minimum_ld (default: list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5)).
@@ -182,7 +182,7 @@ univariate_analysis_pipeline <- function(
 rss_analysis_pipeline <- function(
     sumstat_path, column_file_path, LD_data, n_sample = 0, n_case = 0, n_control = 0, region = NULL, skip_region = NULL,
     extract_region_name = NULL, region_name_col = NULL,
-    qc_method = c("dentist", "slalom"),
+    qc_method = c("slalom", "dentist"),
     finemapping_method = c("susie_rss", "single_effect", "bayesian_conditional_regression"),
     finemapping_opts = list(
       init_L = 5, max_L = 20, l_step = 5,

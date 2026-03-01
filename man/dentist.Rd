@@ -10,6 +10,7 @@ dentist(
   X = NULL,
   nSample = NULL,
   window_size = 2e+06,
+  window_mode = c("distance", "count"),
   pValueThreshold = 5.0369e-08,
   propSVD = 0.4,
   gcControl = FALSE,
@@ -33,7 +34,15 @@ dentist(
 size). This controls the SVD truncation rank K = min(idx_size, nSample) * propSVD.
 Required when \code{R} is provided; inferred from \code{X} when \code{X} is provided.}
 
-\item{window_size}{The size of the window for dividing the genomic region. Default is 2000000.}
+\item{window_size}{The size of the window for dividing the genomic region
+in distance mode (base pairs). Default is 2000000 (2 Mb). Only used when
+\code{window_mode = "distance"}.}
+
+\item{window_mode}{Character string specifying the windowing strategy:
+\code{"distance"} (default) creates windows by physical distance using
+\code{\link{segment_by_dist}} (C++ \code{--wind-dist}), and
+\code{"count"} creates windows by variant count using
+\code{\link{segment_by_count}} (C++ \code{--wind}).}
 
 \item{pValueThreshold}{The p-value threshold for significance. Default is 5e-8.}
 
@@ -51,7 +60,8 @@ Required when \code{R} is provided; inferred from \code{X} when \code{X} is prov
 
 \item{correct_chen_et_al_bug}{Logical indicating whether to correct the Chen et al. bug. Default is TRUE.}
 
-\item{min_dim}{Minimum number of SNPs per window. Default is 2000.}
+\item{min_dim}{In distance mode: minimum number of SNPs per block (default 2000).
+In count mode: the number of variants per window (i.e., the window size).}
 }
 \value{
 A data frame containing the imputed result and detected outliers.
@@ -77,9 +87,19 @@ predicted values. It can detect errors in genotyping/imputation, allelic errors,
 heterogeneity between GWAS and LD reference samples.
 }
 \details{
-Windowing uses the original DENTIST C++ binary's \code{segmentingByDist} algorithm
-(implemented in \code{\link{segment_by_dist}}). The \code{correct_chen_et_al_bug}
-parameter affects the iterative filtering in two ways:
+Windowing supports two modes matching the original DENTIST C++ binary:
+\itemize{
+  \item \code{"distance"} (default): Uses the \code{segmentingByDist} algorithm
+    (C++ \code{--wind-dist}), implemented in \code{\link{segment_by_dist}}.
+    Windows span a fixed physical distance (\code{window_size} bp).
+  \item \code{"count"}: Uses the \code{segmentedQCed} algorithm
+    (C++ \code{--wind}), implemented in \code{\link{segment_by_count}}.
+    Windows contain a fixed number of variants (\code{min_dim}).
+    Useful when regions have sparse variants where distance-based windows
+    would create windows with too few variants.
+}
+The \code{correct_chen_et_al_bug} parameter affects the iterative filtering
+in two ways:
 \enumerate{
   \item Comparison between iteration index \code{t} and \code{nIter} (explained in source code)
   \item The \code{!grouping_tmp} operator bug (explained in source code)

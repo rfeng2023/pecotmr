@@ -49,7 +49,14 @@ resolve_LD_input <- function(R = NULL, X = NULL, nSample = NULL, need_nSample = 
 #' @param nSample The number of samples in the LD reference panel (NOT the GWAS sample
 #'   size). This controls the SVD truncation rank K = min(idx_size, nSample) * propSVD.
 #'   Required when \code{R} is provided; inferred from \code{X} when \code{X} is provided.
-#' @param window_size The size of the window for dividing the genomic region. Default is 2000000.
+#' @param window_size The size of the window for dividing the genomic region
+#'   in distance mode (base pairs). Default is 2000000 (2 Mb). Only used when
+#'   \code{window_mode = "distance"}.
+#' @param window_mode Character string specifying the windowing strategy:
+#'   \code{"distance"} (default) creates windows by physical distance using
+#'   \code{\link{segment_by_dist}} (C++ \code{--wind-dist}), and
+#'   \code{"count"} creates windows by variant count using
+#'   \code{\link{segment_by_count}} (C++ \code{--wind}).
 #' @param pValueThreshold The p-value threshold for significance. Default is 5e-8.
 #' @param propSVD The proportion of singular value decomposition (SVD) to use. Default is 0.4.
 #' @param gcControl Logical indicating whether genomic control should be applied. Default is FALSE.
@@ -58,7 +65,8 @@ resolve_LD_input <- function(R = NULL, X = NULL, nSample = NULL, need_nSample = 
 #' @param duprThreshold The absolute correlation r value threshold to be considered duplicate. Default is 0.99.
 #' @param ncpus The number of CPU cores to use for parallel processing. Default is 1.
 #' @param correct_chen_et_al_bug Logical indicating whether to correct the Chen et al. bug. Default is TRUE.
-#' @param min_dim Minimum number of SNPs per window. Default is 2000.
+#' @param min_dim In distance mode: minimum number of SNPs per block (default 2000).
+#'   In count mode: the number of variants per window (i.e., the window size).
 #'
 #' @return A data frame containing the imputed result and detected outliers.
 #'
@@ -80,9 +88,19 @@ resolve_LD_input <- function(R = NULL, X = NULL, nSample = NULL, need_nSample = 
 #' dentist(sum_stat, R = LD_mat, nSample = nSample)
 #'
 #' @details
-#' Windowing uses the original DENTIST C++ binary's \code{segmentingByDist} algorithm
-#' (implemented in \code{\link{segment_by_dist}}). The \code{correct_chen_et_al_bug}
-#' parameter affects the iterative filtering in two ways:
+#' Windowing supports two modes matching the original DENTIST C++ binary:
+#' \itemize{
+#'   \item \code{"distance"} (default): Uses the \code{segmentingByDist} algorithm
+#'     (C++ \code{--wind-dist}), implemented in \code{\link{segment_by_dist}}.
+#'     Windows span a fixed physical distance (\code{window_size} bp).
+#'   \item \code{"count"}: Uses the \code{segmentedQCed} algorithm
+#'     (C++ \code{--wind}), implemented in \code{\link{segment_by_count}}.
+#'     Windows contain a fixed number of variants (\code{min_dim}).
+#'     Useful when regions have sparse variants where distance-based windows
+#'     would create windows with too few variants.
+#' }
+#' The \code{correct_chen_et_al_bug} parameter affects the iterative filtering
+#' in two ways:
 #' \enumerate{
 #'   \item Comparison between iteration index \code{t} and \code{nIter} (explained in source code)
 #'   \item The \code{!grouping_tmp} operator bug (explained in source code)
@@ -90,7 +108,8 @@ resolve_LD_input <- function(R = NULL, X = NULL, nSample = NULL, need_nSample = 
 #'
 #' @export
 dentist <- function(sum_stat, R = NULL, X = NULL, nSample = NULL,
-                    window_size = 2000000, pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
+                    window_size = 2000000, window_mode = c("distance", "count"),
+                    pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
                     nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99, ncpus = 1,
                     correct_chen_et_al_bug = TRUE, min_dim = 2000) {
   # Resolve LD matrix and sample size from R or X
@@ -114,7 +133,8 @@ dentist <- function(sum_stat, R = NULL, X = NULL, nSample = NULL,
 
   sum_stat <- sum_stat %>% arrange(pos)
 
-  # Use the original DENTIST C++ binary's segmentation algorithm.
+  window_mode <- match.arg(window_mode)
+
   # If the data has fewer SNPs than min_dim, run as a single window directly.
   n_snps <- nrow(sum_stat)
   if (n_snps < min_dim) {
@@ -125,7 +145,12 @@ dentist <- function(sum_stat, R = NULL, X = NULL, nSample = NULL,
       ncpus = ncpus, correct_chen_et_al_bug = correct_chen_et_al_bug
     )
   } else {
-    window_divided_res <- segment_by_dist(sum_stat$pos, max_dist = window_size, min_dim = min_dim)
+    # Windowing: dispatch by mode (C++ --wind-dist vs --wind)
+    if (window_mode == "distance") {
+      window_divided_res <- segment_by_dist(sum_stat$pos, max_dist = window_size, min_dim = min_dim)
+    } else {
+      window_divided_res <- segment_by_count(sum_stat$pos, max_count = min_dim)
+    }
     dentist_result_by_window <- list()
     for (k in 1:nrow(window_divided_res)) {
       # windowEndIdx is 1-based exclusive (one past last element), so convert to
@@ -183,7 +208,10 @@ dentist_single_window <- function(zScore, R = NULL, X = NULL, nSample = NULL,
   LD_mat <- LD_mat$R
 
   if (length(zScore) < 2000) {
-    warning("The number of variants is below 2000. The algorithm may not work as expected, as suggested by the original DENTIST.")
+    warning(sprintf(
+      "The number of variants (%d) is below 2000. The algorithm may not work as expected, as suggested by the original DENTIST. Consider using window_mode = 'count' with an appropriate min_dim to control window sizes by variant count.",
+      length(zScore)
+    ))
   }
   if (!is.matrix(LD_mat) || nrow(LD_mat) != ncol(LD_mat) || nrow(LD_mat) != length(zScore)) {
     stop("LD_mat must be a square matrix with dimensions equal to the length of zScore.")
@@ -322,6 +350,188 @@ add_dups_back_dentist <- function(zScore, dentist_output, find_dup_output) {
   return(updated_data)
 }
 
+# ---- Segmentation helpers ----
+# detect_gaps(), build_segment_result(), and sliding_window_loop() are shared
+# by both segment_by_dist() and segment_by_count() to avoid code duplication.
+# The core overlapping-window loop lives in sliding_window_loop(); each mode
+# only supplies mode-specific callbacks for fill, step, and block-skip logic.
+
+#' Detect Gaps in Genomic Positions
+#'
+#' Finds positions where the inter-SNP distance exceeds a threshold,
+#' e.g., centromeric regions. Returns a vector of 1-based block boundaries.
+#'
+#' @param pos Sorted numeric vector of base pair positions.
+#' @param gap_threshold Numeric distance threshold for gap detection.
+#' @param verbose Logical; print gap info. Default is FALSE.
+#'
+#' @return Integer vector of 1-based block boundaries, including
+#'   \code{1} (start) and \code{length(pos) + 1} (end sentinel).
+#'
+#' @noRd
+detect_gaps <- function(pos, gap_threshold, verbose = FALSE) {
+  n <- length(pos)
+  diffs <- diff(pos)
+  allGaps <- c(1L)
+  for (i in seq_along(diffs)) {
+    if (diffs[i] > gap_threshold) {
+      allGaps <- c(allGaps, i + 1L)
+    }
+  }
+  allGaps <- c(allGaps, n + 1L)
+
+  if (verbose && length(allGaps) - 2 > 0) {
+    message(sprintf("No. of gaps found: %d", length(allGaps) - 2))
+    for (i in 2:(length(allGaps) - 1)) {
+      message(sprintf("  Gap %d: %d - %d", i - 1, pos[allGaps[i] - 1], pos[allGaps[i]]))
+    }
+  }
+  allGaps
+}
+
+#' Build Segment Result Data Frame
+#'
+#' Validates, caps indices, optionally prints verbose info, and returns the
+#' standardized segmentation result data frame.
+#'
+#' @param startList Integer vector of window start indices.
+#' @param endList Integer vector of window end indices (exclusive).
+#' @param fillStartList Integer vector of fill start indices.
+#' @param fillEndList Integer vector of fill end indices (exclusive).
+#' @param n Total number of positions.
+#' @param verbose Logical; print interval info. Default is FALSE.
+#'
+#' @return A data frame with columns: windowIdx, windowStartIdx, windowEndIdx,
+#'   fillStartIdx, fillEndIdx.
+#'
+#' @noRd
+build_segment_result <- function(startList, endList, fillStartList, fillEndList, n, verbose = FALSE) {
+  if (length(startList) == 0) stop("No intervals created by segmentation")
+
+  # Cap end indices at n+1 (one past the last valid 1-based index)
+  endList <- pmin(endList, n + 1L)
+  fillEndList <- pmin(fillEndList, n + 1L)
+
+  if (verbose) {
+    message("Intervals:")
+    for (i in seq_along(startList)) {
+      message(sprintf("  %d: SNPs %d-%d (fill %d-%d)",
+                      i, startList[i], endList[i], fillStartList[i], fillEndList[i]))
+    }
+  }
+
+  data.frame(
+    windowIdx = seq_along(startList),
+    windowStartIdx = startList,
+    windowEndIdx = endList,
+    fillStartIdx = fillStartList,
+    fillEndIdx = fillEndList
+  )
+}
+
+#' Sliding Window Loop for Genomic Segmentation
+#'
+#' Core overlapping-window loop shared by both distance-based and count-based
+#' segmentation strategies. Iterates over contiguous blocks (separated by gaps),
+#' creates overlapping windows within each block using mode-specific callbacks,
+#' and assembles the result.
+#'
+#' @param allGaps Integer vector of 1-based block boundaries from
+#'   \code{\link{detect_gaps}}.
+#' @param n Total number of positions.
+#' @param min_block_fn Function(blockSize) -> logical; returns TRUE if the block
+#'   is large enough to process.
+#' @param init_end_fn Function(startIdx, blockEnd) -> integer; computes the
+#'   initial window end index for the first window in a block.
+#' @param fill_fn Function(startIdx, endIdx, notStartInterval, notLastInterval)
+#'   -> list(start, end); computes fill boundaries for each window.
+#' @param step_fn Function(startIdx, blockEnd) -> list(startIdx, endIdx);
+#'   advances to the next window.
+#' @param adjust_last_fn Optional function(startIdx, old_startIdx, endIdx, blockEnd)
+#'   -> integer; adjusts startIdx when the last interval is detected.
+#'   Used by distance mode for small-last-interval correction. Default is NULL (no adjustment).
+#' @param verbose Logical; print interval info. Default is FALSE.
+#'
+#' @return A data frame with columns: windowIdx, windowStartIdx, windowEndIdx,
+#'   fillStartIdx, fillEndIdx.
+#'
+#' @noRd
+sliding_window_loop <- function(allGaps, n,
+                                min_block_fn,
+                                init_end_fn,
+                                fill_fn,
+                                step_fn,
+                                adjust_last_fn = NULL,
+                                verbose = FALSE) {
+  startList <- integer(0)
+  endList <- integer(0)
+  fillStartList <- integer(0)
+  fillEndList <- integer(0)
+
+  for (k in seq_len(length(allGaps) - 1)) {
+    firstSegIdx <- length(startList) + 1
+    blockStart <- allGaps[k]
+    blockEnd <- allGaps[k + 1]
+    blockSize <- blockEnd - blockStart
+
+    if (!min_block_fn(blockSize)) next
+
+    startIdx <- blockStart
+    endIdx <- init_end_fn(startIdx, blockEnd)
+
+    old_startIdx <- startIdx
+    notStartInterval <- FALSE
+    notLastInterval <- TRUE
+    times <- 0
+
+    repeat {
+      times <- times + 1
+      if (times > 400) stop("Windowing iteration limit exceeded")
+
+      # Compute fill boundaries BEFORE any startIdx adjustment.
+      # In the original C++ code, fill is recorded using the pre-adjustment
+      # startIdx, then startIdx is optionally moved backward for the window.
+      # This ensures fill boundaries remain non-overlapping between windows.
+      fill_startIdx <- startIdx
+
+      # Check if this is the last window
+      if (blockEnd <= endIdx) {
+        notLastInterval <- FALSE
+        # Optional: adjust startIdx for the last window (distance mode only)
+        if (!is.null(adjust_last_fn)) {
+          startIdx <- adjust_last_fn(startIdx, old_startIdx, endIdx, blockEnd)
+        }
+      }
+
+      # Compute fill boundaries using the pre-adjustment startIdx
+      fills <- fill_fn(fill_startIdx, endIdx, notStartInterval, notLastInterval)
+
+      startList <- c(startList, startIdx)
+      endList <- c(endList, min(endIdx, blockEnd))
+      fillStartList <- c(fillStartList, fills$start)
+      fillEndList <- c(fillEndList, fills$end)
+
+      if (!notLastInterval) break
+
+      # Step to next window (mode-specific)
+      old_startIdx <- startIdx
+      stepped <- step_fn(startIdx, blockEnd)
+      startIdx <- stepped$startIdx
+      endIdx <- stepped$endIdx
+      notStartInterval <- TRUE
+    }
+
+    # Fix first and last fill boundaries for this block:
+    # first window's fill starts at window start, last window's fill ends at window end
+    if (length(startList) >= firstSegIdx) {
+      fillStartList[firstSegIdx] <- startList[firstSegIdx]
+      fillEndList[length(fillEndList)] <- endList[length(endList)]
+    }
+  }
+
+  build_segment_result(startList, endList, fillStartList, fillEndList, n, verbose)
+}
+
 #' Segment Genomic Region by Distance (Original DENTIST Algorithm)
 #'
 #' Implements the same windowing/segmentation algorithm as the original DENTIST C++ binary's
@@ -402,105 +612,99 @@ segment_by_dist <- function(pos, max_dist = 2000000, min_dim = 2000, verbose = F
   q4 <- function(x) quaterIdx[quaterIdx[quaterIdx[quaterIdx[x]]]]
 
   # Find gaps > cutoff/4
-  diffs <- diff(pos)
-  gapSizeThresh <- cutoff / 4
-  allGaps <- c(1L)  # start of chromosome (1-based)
-  for (i in seq_along(diffs)) {
-    if (diffs[i] > gapSizeThresh) {
-      allGaps <- c(allGaps, i + 1L)  # 1-based index of SNP after gap
-    }
-  }
-  allGaps <- c(allGaps, n + 1L)  # end sentinel (one past last)
+  allGaps <- detect_gaps(pos, gap_threshold = cutoff / 4, verbose = verbose)
 
-  if (verbose && length(allGaps) - 2 > 0) {
-    message(sprintf("No. of gaps found: %d", length(allGaps) - 2))
-    for (i in 2:(length(allGaps) - 1)) {
-      message(sprintf("  Gap %d: %d - %d", i - 1, pos[allGaps[i] - 1], pos[allGaps[i]]))
-    }
-  }
-
-  startList <- integer(0)
-  endList <- integer(0)
-  fillStartList <- integer(0)
-  fillEndList <- integer(0)
-
-  for (k in seq_len(length(allGaps) - 1)) {
-    firstSegIdx <- length(startList) + 1  # 1-based
-    rangeSize <- allGaps[k + 1] - allGaps[k]  # number of SNPs in this region
-    if (rangeSize < minBlockSize / 2) next
-    if (rangeSize - min_dim < 0) next
-
-    startIdx <- allGaps[k]  # 1-based
-    endIdx_region <- allGaps[k + 1]  # 1-based, one past last
-
-    # endIdx for window = 4 quarter steps + 1 from startIdx
-    endIdx <- min(q4(startIdx) + 1, endIdx_region)
-
-    notLastInterval <- TRUE
-    old_startIdx <- startIdx
-    times <- 0
-
-    repeat {
-      times <- times + 1
-      if (times > 400) stop("Windowing iteration limit exceeded")
-
-      # Fill: quarter to three-quarters
-      fillStartList <- c(fillStartList, q1(startIdx))
-      # C++ uses exclusive end (i < fillEnd), so q3(startIdx) is already the
-      # 1-based exclusive end. Keep it as-is for consistent convention.
-      # The last segment's fillEnd will be reset below to endList[last].
-      fillEndList <- c(fillEndList, q3(startIdx))
-
-      if (endIdx_region <= endIdx) {
-        notLastInterval <- FALSE
-        # If last interval is small, startIdx goes back one step
-        if (as.numeric(pos[min(endIdx - 1, n)]) - as.numeric(pos[q1(old_startIdx)]) < cutoff) {
-          startIdx <- q1(old_startIdx)
-        }
+  sliding_window_loop(
+    allGaps, n,
+    min_block_fn = function(blockSize) {
+      blockSize >= minBlockSize / 2 && (blockSize - min_dim) >= 0
+    },
+    init_end_fn = function(startIdx, blockEnd) {
+      min(q4(startIdx) + 1, blockEnd)
+    },
+    fill_fn = function(startIdx, endIdx, notStartInterval, notLastInterval) {
+      # Distance mode: fill is always q1 to q3 (inner 50% by distance);
+      # first/last corrections are handled by fix_block_fills in the loop
+      list(start = q1(startIdx), end = q3(startIdx))
+    },
+    step_fn = function(startIdx, blockEnd) {
+      next_start <- q2(startIdx)
+      list(startIdx = next_start, endIdx = min(q4(next_start) + 1, blockEnd))
+    },
+    adjust_last_fn = function(startIdx, old_startIdx, endIdx, blockEnd) {
+      # If last interval is small, go back one step
+      if (as.numeric(pos[min(endIdx - 1, n)]) - as.numeric(pos[q1(old_startIdx)]) < cutoff) {
+        q1(old_startIdx)
+      } else {
+        startIdx
       }
+    },
+    verbose = verbose
+  )
+}
 
-      startList <- c(startList, startIdx)
-      # Keep endIdx as 1-based exclusive (one-past-end), matching the C++ convention.
-      # Cap at endIdx_region (also one-past-end) but do NOT cap at n — that would
-      # convert the exclusive end to an inclusive end, creating mixed conventions.
-      endList <- c(endList, min(endIdx, endIdx_region))
+#' Segment Genomic Region by Variant Count
+#'
+#' Implements the windowing algorithm from the original DENTIST C++ binary's
+#' \code{segmentedQCed} function. Windows contain a fixed number of variants
+#' rather than spanning a fixed physical distance.
+#'
+#' @param pos Integer vector of base pair positions (must be sorted).
+#' @param max_count Maximum number of variants per window.
+#' @param gap_dist Physical distance threshold for centromeric gap detection.
+#'   Default is 1e6 (matching the C++ hardcoded value).
+#' @param verbose Logical; print segmentation info. Default is FALSE.
+#'
+#' @return A data frame with the same structure as \code{\link{segment_by_dist}}:
+#'   windowIdx, windowStartIdx, windowEndIdx, fillStartIdx, fillEndIdx.
+#'   End indices are 1-based exclusive (one past last element).
+#'
+#' @details
+#' This is a faithful R translation of the C++ \code{segmentedQCed} windowing
+#' algorithm. Key differences from \code{segment_by_dist}:
+#' \itemize{
+#'   \item Windows are sized by variant count, not physical distance.
+#'   \item Uses simple index arithmetic (step = max_count/2) instead of
+#'         distance-based quarter-index lookups.
+#'   \item Gap detection uses a fixed 1 Mb threshold (centromeres) instead of
+#'         distance/4.
+#'   \item Adaptive tail absorption: if fewer than \code{max_count/2} variants
+#'         remain after a window, the window extends to cover the rest.
+#' }
+#'
+#' @seealso \code{\link{segment_by_dist}}, \code{\link{dentist}}
+#'
+#' @noRd
+segment_by_count <- function(pos, max_count, gap_dist = 1e6, verbose = FALSE) {
+  n <- length(pos)
+  if (n == 0) stop("No positions provided")
 
-      # Update to next
-      old_startIdx <- startIdx
-      startIdx <- q2(startIdx)
-      endIdx <- min(q4(startIdx) + 1, endIdx_region)
+  cutoff <- as.integer(max_count)
+  quarter <- cutoff %/% 4L
+  half <- cutoff %/% 2L
 
-      if (!notLastInterval) break
-    }
+  # Detect centromeric gaps (C++ line 784: diff > 1e6)
+  allGaps <- detect_gaps(pos, gap_threshold = gap_dist, verbose = verbose)
 
-    # Reset first and last segment fill boundaries
-    if (length(startList) >= firstSegIdx) {
-      fillStartList[firstSegIdx] <- startList[firstSegIdx]
-      fillEndList[length(fillEndList)] <- endList[length(endList)]
-    }
-  }
-
-  if (length(startList) == 0) stop("No intervals created by segmentation")
-
-  if (verbose) {
-    message("Intervals:")
-    for (i in seq_along(startList)) {
-      message(sprintf("  %d: SNPs %d-%d (fill %d-%d)",
-                      i, startList[i], endList[i], fillStartList[i], fillEndList[i]))
-    }
-  }
-
-  # windowEndIdx and fillEndIdx are 1-based exclusive (one past last element).
-  # Cap at n+1 (one past the last valid 1-based index).
-  endList <- pmin(endList, n + 1L)
-  fillEndList <- pmin(fillEndList, n + 1L)
-
-  data.frame(
-    windowIdx = seq_along(startList),
-    windowStartIdx = startList,
-    windowEndIdx = endList,
-    fillStartIdx = fillStartList,
-    fillEndIdx = fillEndList
+  sliding_window_loop(
+    allGaps, n,
+    min_block_fn = function(blockSize) blockSize >= half,
+    init_end_fn = function(startIdx, blockEnd) {
+      if (blockEnd - half > startIdx + cutoff) startIdx + cutoff else blockEnd
+    },
+    fill_fn = function(startIdx, endIdx, notStartInterval, notLastInterval) {
+      # Count mode: fill based on index arithmetic (inner 50%)
+      list(
+        start = if (notStartInterval) startIdx + quarter else startIdx,
+        end = if (notLastInterval) endIdx - quarter else endIdx
+      )
+    },
+    step_fn = function(startIdx, blockEnd) {
+      next_start <- startIdx + half
+      endIdx <- if (blockEnd - half > next_start + cutoff) next_start + cutoff else blockEnd
+      list(startIdx = next_start, endIdx = endIdx)
+    },
+    verbose = verbose
   )
 }
 
@@ -595,7 +799,9 @@ read_dentist_sumstat <- function(gwas_summary) {
 #'   uses the reference panel size from the genotype matrix. This controls the SVD
 #'   truncation rank K = min(idx_size, nSample) * propSVD. Note: this is the reference
 #'   panel size, NOT the GWAS sample size. Default is NULL.
-#' @param window_size Window size in base pairs. Default is 2000000.
+#' @param window_size Window size in base pairs for distance mode. Default is 2000000.
+#' @param window_mode Character string specifying the windowing strategy:
+#'   \code{"distance"} (default) or \code{"count"}. See \code{\link{dentist}}.
 #' @param pValueThreshold P-value threshold for outlier detection. Default is 5.0369e-8.
 #' @param propSVD SVD truncation proportion. Default is 0.4.
 #' @param gcControl Logical; apply genomic control. Default is FALSE.
@@ -604,7 +810,8 @@ read_dentist_sumstat <- function(gwas_summary) {
 #' @param duprThreshold LD r-squared threshold for duplicate detection. Default is 0.99.
 #' @param ncpus Number of CPU threads. Default is 1.
 #' @param correct_chen_et_al_bug Logical; correct known bugs in original DENTIST. Default is TRUE.
-#' @param min_dim Minimum number of SNPs per window. Default is 2000.
+#' @param min_dim In distance mode: minimum number of SNPs per block (default 2000).
+#'   In count mode: the number of variants per window.
 #' @param use_gcta_LD Logical; use GCTA-style LD computation and raw B-allele
 #'   counts to match the DENTIST binary's exact floating-point behavior. Requires
 #'   snpStats. Default is FALSE; set to TRUE when comparing against the binary.
@@ -641,6 +848,7 @@ dentist_from_files <- function(gwas_summary,
                                 bfile,
                                 nSample = NULL,
                                 window_size = 2000000,
+                                window_mode = c("distance", "count"),
                                 pValueThreshold = 5.0369e-8,
                                 propSVD = 0.4,
                                 gcControl = FALSE,
@@ -802,6 +1010,7 @@ dentist_from_files <- function(gwas_summary,
     R = LD_mat,
     nSample = nSample,
     window_size = window_size,
+    window_mode = window_mode,
     pValueThreshold = pValueThreshold,
     propSVD = propSVD,
     gcControl = gcControl,

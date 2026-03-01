@@ -15,7 +15,7 @@ colocboost_analysis_pipeline(
   pip_cutoff_to_skip_ind = 0,
   remove_indels = FALSE,
   pip_cutoff_to_skip_sumstat = 0,
-  qc_method = c("dentist", "slalom"),
+  qc_method = c("slalom", "dentist"),
   impute = TRUE,
   impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01),
   ...
@@ -34,7 +34,7 @@ colocboost_analysis_pipeline(
 
 \item{pip_cutoff_to_skip_sumstat}{A vector of cutoff values for skipping analysis based on PIP values for each sumstat Default is 0.}
 
-\item{qc_method}{Quality control method to use. Options are "dentist" or "slalom" (default: "dentist").}
+\item{qc_method}{Quality control method to use. Options are "slalom" or "dentist" (default: "slalom").}
 
 \item{impute}{Logical; if TRUE, performs imputation for outliers identified in the analysis (default: TRUE).}
 

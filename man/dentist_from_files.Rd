@@ -9,6 +9,7 @@ dentist_from_files(
   bfile,
   nSample = NULL,
   window_size = 2e+06,
+  window_mode = c("distance", "count"),
   pValueThreshold = 5.0369e-08,
   propSVD = 0.4,
   gcControl = FALSE,
@@ -33,7 +34,10 @@ uses the reference panel size from the genotype matrix. This controls the SVD
 truncation rank K = min(idx_size, nSample) * propSVD. Note: this is the reference
 panel size, NOT the GWAS sample size. Default is NULL.}
 
-\item{window_size}{Window size in base pairs. Default is 2000000.}
+\item{window_size}{Window size in base pairs for distance mode. Default is 2000000.}
+
+\item{window_mode}{Character string specifying the windowing strategy:
+\code{"distance"} (default) or \code{"count"}. See \code{\link{dentist}}.}
 
 \item{pValueThreshold}{P-value threshold for outlier detection. Default is 5.0369e-8.}
 
@@ -51,7 +55,8 @@ panel size, NOT the GWAS sample size. Default is NULL.}
 
 \item{correct_chen_et_al_bug}{Logical; correct known bugs in original DENTIST. Default is TRUE.}
 
-\item{min_dim}{Minimum number of SNPs per window. Default is 2000.}
+\item{min_dim}{In distance mode: minimum number of SNPs per block (default 2000).
+In count mode: the number of variants per window.}
 
 \item{use_gcta_LD}{Logical; use GCTA-style LD computation and raw B-allele
 counts to match the DENTIST binary's exact floating-point behavior. Requires

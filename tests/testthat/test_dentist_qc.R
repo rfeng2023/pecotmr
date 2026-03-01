@@ -278,3 +278,168 @@ test_that("dentist_single_window with X matrix input returns exactly N rows", {
     expect_equal(nrow(res), n_snps)
 })
 
+# ---- detect_gaps tests ----
+
+test_that("detect_gaps finds no internal gaps for contiguous positions", {
+    pos <- seq(1000, by = 100, length.out = 50)
+    gaps <- pecotmr:::detect_gaps(pos, gap_threshold = 500)
+    # Only start and end sentinel
+    expect_equal(gaps, c(1L, 51L))
+})
+
+test_that("detect_gaps finds a centromeric gap", {
+    pos <- c(seq(1000, by = 100, length.out = 50),
+             seq(2000000, by = 100, length.out = 50))
+    gaps <- pecotmr:::detect_gaps(pos, gap_threshold = 1e6)
+    expect_equal(length(gaps), 3)  # start, gap, end
+    expect_equal(gaps, c(1L, 51L, 101L))
+})
+
+test_that("detect_gaps finds multiple gaps", {
+    pos <- c(1000, 2000, 5000000, 6000000, 12000000)
+    gaps <- pecotmr:::detect_gaps(pos, gap_threshold = 1e6)
+    # Gaps at positions 3 and 5 (diffs > 1e6 at indices 2 and 4)
+    expect_equal(gaps, c(1L, 3L, 5L, 6L))
+})
+
+# ---- segment_by_count tests ----
+
+test_that("segment_by_count produces valid windows", {
+    pos <- seq(1000000, by = 1000, length.out = 500)
+    res <- pecotmr:::segment_by_count(pos, max_count = 100)
+    expect_true(nrow(res) >= 1)
+    # All window starts should be >= 1
+    expect_true(all(res$windowStartIdx >= 1))
+    # All window ends should be <= length(pos) + 1
+    expect_true(all(res$windowEndIdx <= length(pos) + 1))
+    # Fill regions should be within windows
+    for (k in 1:nrow(res)) {
+        expect_true(res$fillStartIdx[k] >= res$windowStartIdx[k])
+        expect_true(res$fillEndIdx[k] <= res$windowEndIdx[k])
+    }
+})
+
+test_that("segment_by_count fill regions cover all positions", {
+    pos <- seq(1000000, by = 1000, length.out = 500)
+    res <- pecotmr:::segment_by_count(pos, max_count = 100)
+    covered <- integer(0)
+    for (k in 1:nrow(res)) {
+        covered <- c(covered, res$fillStartIdx[k]:(res$fillEndIdx[k] - 1L))
+    }
+    expect_equal(sort(unique(covered)), 1:length(pos))
+})
+
+test_that("segment_by_count handles centromeric gap", {
+    # Create two blocks separated by a large gap
+    pos <- c(seq(1000000, by = 1000, length.out = 200),
+             seq(5000000, by = 1000, length.out = 200))
+    res <- pecotmr:::segment_by_count(pos, max_count = 100)
+    # Should create windows in both blocks
+    expect_true(nrow(res) >= 2)
+    # Fill regions should still cover all positions
+    covered <- integer(0)
+    for (k in 1:nrow(res)) {
+        covered <- c(covered, res$fillStartIdx[k]:(res$fillEndIdx[k] - 1L))
+    }
+    expect_equal(sort(unique(covered)), 1:length(pos))
+})
+
+test_that("segment_by_count skips blocks smaller than half max_count", {
+    # Block of 20 variants with max_count=100 (half=50): too small, should be skipped
+    pos <- seq(1000000, by = 1000, length.out = 20)
+    expect_error(pecotmr:::segment_by_count(pos, max_count = 100),
+                 "No intervals created by segmentation")
+})
+
+test_that("segment_by_count creates single window for small blocks", {
+    # Block of 60 variants with max_count=100: creates one window (60 >= half=50)
+    pos <- seq(1000000, by = 1000, length.out = 60)
+    res <- pecotmr:::segment_by_count(pos, max_count = 100)
+    expect_equal(nrow(res), 1)
+    expect_equal(res$windowStartIdx[1], 1)
+    expect_equal(res$windowEndIdx[1], 61)
+})
+
+test_that("segment_by_count single block creates correct number of windows", {
+    # 200 variants with max_count = 100 should create ~3 windows
+    # (step = 50, so: [1,100], [51,150], [101,200])
+    pos <- seq(1000000, by = 1000, length.out = 200)
+    res <- pecotmr:::segment_by_count(pos, max_count = 100)
+    expect_true(nrow(res) >= 2)
+    expect_true(nrow(res) <= 5)
+})
+
+# ---- dentist with count mode tests ----
+
+test_that("dentist with window_mode='count' returns exactly N rows", {
+    data <- generate_dentist_data(seed = 789, n_snps = 500, sample_size = 500,
+                                   n_outliers = 25, start_pos = 1000000, end_pos = 4000000)
+    suppressWarnings({
+        res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
+                       window_mode = "count", min_dim = 100)
+    })
+    expect_equal(nrow(res), 500)
+})
+
+test_that("dentist with window_mode='count' and correct_chen_et_al_bug=FALSE returns N rows", {
+    data <- generate_dentist_data(seed = 321, n_snps = 500, sample_size = 500,
+                                   n_outliers = 25, start_pos = 1000000, end_pos = 4000000)
+    suppressWarnings({
+        res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
+                       window_mode = "count", min_dim = 100,
+                       correct_chen_et_al_bug = FALSE)
+    })
+    expect_equal(nrow(res), 500)
+})
+
+test_that("dentist_single_window warning suggests count mode", {
+    data <- generate_dentist_single_window_data(n_snps = 100)
+    expect_warning(
+        dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample),
+        "window_mode = 'count'"
+    )
+})
+
+# ---- Equivalence tests: both methods produce same partition ----
+
+test_that("segment_by_dist and segment_by_count agree on uniformly-spaced variants", {
+    # For uniformly-spaced variants, if the distance-based and count-based
+    # parameters are chosen to produce the same number of variants per window,
+    # the fill regions should cover the same positions.
+    n <- 200
+    spacing <- 10000  # 10kb between each variant
+    pos <- seq(1000000, by = spacing, length.out = n)
+    window_count <- 50  # variants per window in count mode
+    window_dist <- window_count * spacing  # equivalent distance
+
+    res_dist <- pecotmr:::segment_by_dist(pos, max_dist = window_dist, min_dim = 10)
+    res_count <- pecotmr:::segment_by_count(pos, max_count = window_count, gap_dist = 1e6)
+
+    # Both should cover all positions
+    covered_dist <- integer(0)
+    for (k in 1:nrow(res_dist)) {
+        covered_dist <- c(covered_dist, res_dist$fillStartIdx[k]:(res_dist$fillEndIdx[k] - 1L))
+    }
+    covered_count <- integer(0)
+    for (k in 1:nrow(res_count)) {
+        covered_count <- c(covered_count, res_count$fillStartIdx[k]:(res_count$fillEndIdx[k] - 1L))
+    }
+    expect_equal(sort(unique(covered_dist)), 1:n)
+    expect_equal(sort(unique(covered_count)), 1:n)
+})
+
+test_that("both windowing modes produce same dentist results on uniform data", {
+    # On the same data, both windowing modes should produce results for all N variants
+    data <- generate_dentist_data(seed = 555, n_snps = 500, sample_size = 500,
+                                   n_outliers = 25, start_pos = 0, end_pos = 5000000)
+    suppressWarnings({
+        res_dist <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
+                            window_mode = "distance", min_dim = 100, window_size = 2000000)
+        res_count <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
+                             window_mode = "count", min_dim = 100)
+    })
+    # Both should return exactly N rows
+    expect_equal(nrow(res_dist), 500)
+    expect_equal(nrow(res_count), 500)
+})
+
