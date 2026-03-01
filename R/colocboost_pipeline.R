@@ -274,6 +274,16 @@ colocboost_analysis_pipeline <- function(region_data,
     })
     LD_match <- sumstat_data$LD_match
     dict_sumstatLD <- cbind(seq_along(sumstats), match(LD_match, names(sumstat_data$LD_mat)))
+    # Validate and filter sumstat entries before analysis
+    filtered <- filter_valid_sumstats(sumstats, LD_mat, LD_match)
+    if (is.null(filtered)) {
+      sumstats <- LD_mat <- dict_sumstatLD <- NULL
+    } else {
+      sumstats <- filtered$sumstats
+      LD_mat <- filtered$LD_mat
+      LD_match <- filtered$LD_match
+      dict_sumstatLD <- filtered$dict_sumstatLD
+    }
   } else {
     sumstats <- LD_mat <- dict_sumstatLD <- NULL
   }
@@ -295,10 +305,16 @@ colocboost_analysis_pipeline <- function(region_data,
         focal_outcome_idx <- which(traits == focal_trait)
       }
     }
-    res_xqtl <- colocboost(
-      X = X, Y = Y, dict_YX = dict_YX,
-      outcome_names = traits, focal_outcome_idx = focal_outcome_idx, 
-      output_level = 2, ...
+    res_xqtl <- tryCatch(
+      colocboost(
+        X = X, Y = Y, dict_YX = dict_YX,
+        outcome_names = traits, focal_outcome_idx = focal_outcome_idx,
+        output_level = 2, ...
+      ),
+      error = function(e) {
+        message("xQTL-only ColocBoost failed: ", conditionMessage(e))
+        return(NULL)
+      }
     )
     t12 <- Sys.time()
     analysis_results$xqtl_coloc <- res_xqtl
@@ -309,11 +325,17 @@ colocboost_analysis_pipeline <- function(region_data,
     message(paste("====== Performing non-focaled version GWAS-xQTL ColocBoost on", length(Y), "contexts and", length(sumstats), "GWAS. ====="))
     t21 <- Sys.time()
     traits <- c(names(Y), names(sumstats))
-    res_gwas <- colocboost(
-      X = X, Y = Y, sumstat = sumstats, LD = LD_mat,
-      dict_YX = dict_YX, dict_sumstatLD = dict_sumstatLD,
-      outcome_names = traits, focal_outcome_idx = NULL, 
-      output_level = 2, ...
+    res_gwas <- tryCatch(
+      colocboost(
+        X = X, Y = Y, sumstat = sumstats, LD = LD_mat,
+        dict_YX = dict_YX, dict_sumstatLD = dict_sumstatLD,
+        outcome_names = traits, focal_outcome_idx = NULL,
+        output_level = 2, ...
+      ),
+      error = function(e) {
+        message("Joint GWAS ColocBoost failed: ", conditionMessage(e))
+        return(NULL)
+      }
     )
     t22 <- Sys.time()
     analysis_results$joint_gwas <- res_gwas
@@ -328,11 +350,17 @@ colocboost_analysis_pipeline <- function(region_data,
       message(paste("====== Performing focaled version GWAS-xQTL ColocBoost on", length(Y), "contexts and ", current_study, "GWAS. ====="))
       dict <- dict_sumstatLD[i_gwas, ]
       traits <- c(names(Y), current_study)
-      res_gwas_separate[[current_study]] <- colocboost(
-        X = X, Y = Y, sumstat = sumstats[dict[1]],
-        LD = LD_mat[dict[2]], dict_YX = dict_YX,
-        outcome_names = traits, focal_outcome_idx = length(traits), 
-        output_level = 2, ...
+      res_gwas_separate[[current_study]] <- tryCatch(
+        colocboost(
+          X = X, Y = Y, sumstat = sumstats[dict[1]],
+          LD = LD_mat[dict[2]], dict_YX = dict_YX,
+          outcome_names = traits, focal_outcome_idx = length(traits),
+          output_level = 2, ...
+        ),
+        error = function(e) {
+          message("Separate GWAS ColocBoost failed for ", current_study, ": ", conditionMessage(e))
+          return(NULL)
+        }
       )
     }
     t32 <- Sys.time()
@@ -341,6 +369,59 @@ colocboost_analysis_pipeline <- function(region_data,
   }
 
   return(analysis_results)
+}
+
+
+#' Validate a single summary statistics entry
+#'
+#' Checks whether a sumstat data frame (with columns z, n, variant) has
+#' sufficient data for colocboost analysis.
+#'
+#' @param ss_df A data.frame with columns "z", "n", and "variant" as produced
+#'   by the sumstat processing block in \code{colocboost_analysis_pipeline}.
+#' @param min_variants Minimum number of non-NA z-score variants required.
+#'   Default is 2.
+#' @return TRUE if the entry is valid; FALSE otherwise.
+#' @noRd
+is_valid_sumstat_entry <- function(ss_df, min_variants = 2) {
+  if (is.null(ss_df) || !is.data.frame(ss_df)) return(FALSE)
+  if (nrow(ss_df) < min_variants) return(FALSE)
+  if (all(is.na(ss_df$z))) return(FALSE)
+  if (all(ss_df$n <= 0 | is.na(ss_df$n))) return(FALSE)
+  return(TRUE)
+}
+
+
+#' Filter summary statistics to retain only valid entries
+#'
+#' Applies \code{is_valid_sumstat_entry} to each element of the sumstats list
+#' and removes invalid entries. Also updates the LD match mapping and
+#' dict_sumstatLD accordingly.
+#'
+#' @param sumstats Named list of summary statistic data frames.
+#' @param LD_mat List of LD matrices.
+#' @param LD_match Character vector mapping each sumstat to an LD matrix name.
+#' @param min_variants Minimum variant count passed to
+#'   \code{is_valid_sumstat_entry}.
+#' @return A list with filtered \code{sumstats}, \code{LD_mat}, \code{LD_match},
+#'   and \code{dict_sumstatLD}, or NULL if no valid entries remain.
+#' @noRd
+filter_valid_sumstats <- function(sumstats, LD_mat, LD_match, min_variants = 2) {
+  valid_idx <- vapply(sumstats, is_valid_sumstat_entry, logical(1),
+                       min_variants = min_variants)
+  if (!any(valid_idx)) {
+    message("No valid summary statistic studies remain after validation.")
+    return(NULL)
+  }
+  removed <- names(sumstats)[!valid_idx]
+  if (length(removed) > 0) {
+    message("Removed invalid sumstat studies: ", paste(removed, collapse = ", "))
+  }
+  sumstats <- sumstats[valid_idx]
+  LD_match <- LD_match[valid_idx]
+  dict_sumstatLD <- cbind(seq_along(sumstats), match(LD_match, names(LD_mat)))
+  list(sumstats = sumstats, LD_mat = LD_mat, LD_match = LD_match,
+       dict_sumstatLD = dict_sumstatLD)
 }
 
 

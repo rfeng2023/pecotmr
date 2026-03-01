@@ -83,6 +83,9 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 #' @importFrom stringr str_detect
 
 tabix_region <- function(file, region, tabix_header = "auto", target = "", target_column_index = "") {
+  if (!file.exists(file)) {
+    stop("Input file does not exist: ", file)
+  }
   cmd_output <- tryCatch(
     {
       use_col_names <- if (identical(tabix_header, FALSE)) FALSE else TRUE
@@ -136,6 +139,18 @@ NoSNPsError <- function(message) {
 #' @importFrom magrittr %>%
 #' @export
 load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants_path = NULL) {
+  # Validate genotype file set exists
+  bed_file <- paste0(genotype, ".bed")
+  bim_file <- paste0(genotype, ".bim")
+  fam_file <- paste0(genotype, ".fam")
+  pgen_file <- paste0(genotype, ".pgen")
+  pvar_file <- paste0(genotype, ".pvar")
+  psam_file <- paste0(genotype, ".psam")
+  has_plink1 <- all(file.exists(bed_file, bim_file, fam_file))
+  has_plink2 <- all(file.exists(pgen_file, pvar_file, psam_file))
+  if (!has_plink1 && !has_plink2) {
+    stop("Genotype files not found. Expected either .bed/.bim/.fam or .pgen/.pvar/.psam files at prefix: ", genotype)
+  }
   # Make sure snpStats is installed
   if (!requireNamespace("snpStats", quietly = TRUE)) {
     stop("To use this function, please install snpStats: https://bioconductor.org/packages/release/bioc/html/snpStats.html")
@@ -205,6 +220,11 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
 #' @importFrom magrittr %>%
 #' @noRd
 load_covariate_data <- function(covariate_path) {
+  # Validate all covariate files exist
+  missing <- covariate_path[!file.exists(covariate_path)]
+  if (length(missing) > 0) {
+    stop("Covariate file(s) not found: ", paste(missing, collapse = ", "))
+  }
   return(map(covariate_path, ~ read_delim(.x, "\t", col_types = cols()) %>%
     select(-1) %>%
     mutate(across(everything(), as.numeric)) %>%
@@ -230,8 +250,7 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
   }
 
   # Use `map2` to iterate over `phenotype_path` and `extract_region_name` simultaneously
-  # `compact` should remove all NULL element
-  phenotype_data <- compact(map2(phenotype_path, extract_region_name, ~ {
+  phenotype_data_raw <- map2(phenotype_path, extract_region_name, ~ {
     tabix_data <- if (!is.null(region)) tabix_region(.x, region, tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
     if (nrow(tabix_data) == 0) {
       message(paste("Phenotype file ", .x, " is empty for the specified region", if (is.null(region)) "" else region))
@@ -256,12 +275,18 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
       }
       return(result)
     }
-  }))
+  })
+
+  # Track which indices had non-NULL data, then remove NULLs
+  kept_indices <- which(vapply(phenotype_data_raw, Negate(is.null), logical(1)))
+  phenotype_data <- phenotype_data_raw[kept_indices]
 
   # Check if all phenotype files are empty
   if (length(phenotype_data) == 0) {
     stop(NoPhenotypeError(paste("All phenotype files are empty for the specified region", if (!is.null(region)) "" else region)))
   }
+  # Store kept indices as attribute so callers can align covariates/conditions
+  attr(phenotype_data, "kept_indices") <- kept_indices
   return(phenotype_data)
 }
 
@@ -471,6 +496,13 @@ load_regional_association_data <- function(genotype, # PLINK file
   ## Load phenotype and covariates and perform some pre-processing
   covar <- load_covariate_data(covariate)
   pheno <- load_phenotype_data(phenotype, region, extract_region_name = extract_region_name, region_name_col = region_name_col, tabix_header = tabix_header)
+  # Align covariates and conditions with phenotypes after filtering
+  # load_phenotype_data removes empty phenotypes and stores which indices survived
+  kept_idx <- attr(pheno, "kept_indices")
+  if (!is.null(kept_idx) && length(kept_idx) < length(covar)) {
+    covar <- covar[kept_idx]
+    if (!is.null(conditions)) conditions <- conditions[kept_idx]
+  }
   ### including Y ( cov ) and specific X and covar match, filter X variants based on the overlapped samples.
   data_list <- prepare_data_list(geno, pheno, covar, imiss_cutoff,
     maf_cutoff, mac_cutoff, xvar_cutoff,
@@ -834,6 +866,13 @@ load_twas_weights <- function(weight_db_files, conditions = NULL,
 #' @export
 load_rss_data <- function(sumstat_path, column_file_path, n_sample = 0, n_case = 0, n_control = 0, region = NULL,
                           extract_region_name = NULL, region_name_col = NULL, comment_string = "#") {
+  # Validate input files exist
+  if (!file.exists(sumstat_path)) {
+    stop("Summary statistics file not found: ", sumstat_path)
+  }
+  if (!file.exists(column_file_path)) {
+    stop("Column mapping file not found: ", column_file_path)
+  }
   # Read and preprocess column mapping
   if (is.null(comment_string)) {
     column_data <- read.table(column_file_path,

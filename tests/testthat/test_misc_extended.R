@@ -92,6 +92,24 @@ test_that("variant_id_to_df handles data.frame input with named columns", {
   expect_equal(result$pos, c(100L, 200L))
 })
 
+test_that("variant_id_to_df handles 5-part IDs with build suffix", {
+  ids <- c("chr1:100:A:G:b38", "chr2:200:T:C")
+  result <- pecotmr:::variant_id_to_df(ids)
+  expect_equal(ncol(result), 4)
+  expect_equal(colnames(result), c("chrom", "pos", "A2", "A1"))
+  expect_equal(result$chrom, c(1L, 2L))
+  expect_equal(result$A2, c("A", "T"))
+  expect_equal(result$A1, c("G", "C"))
+})
+
+test_that("variant_id_to_df handles mixed 4/5-part IDs", {
+  ids <- c("1:100:A:G", "chr2:200:T:C:b38", "3:300:G:A:b37")
+  suppressWarnings(result <- pecotmr:::variant_id_to_df(ids))
+  expect_equal(nrow(result), 3)
+  expect_equal(ncol(result), 4)
+  expect_equal(result$A1, c("G", "C", "A"))
+})
+
 # ---- get_nested_element ----
 test_that("get_nested_element retrieves deeply nested values", {
   nested <- list(a = list(b = list(c = 42)))

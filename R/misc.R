@@ -343,6 +343,10 @@ variant_id_to_df <- function(variant_id) {
   create_dataframe <- function(string) {
     string <- gsub("_", ":", string)
     parts <- strsplit(string, ":", fixed = TRUE)
+    # Handle mixed 4-part and 5-part IDs (5th part is build suffix like b38)
+    n_parts <- vapply(parts, length, integer(1))
+    # Truncate any entries with more than 4 parts to just the first 4
+    parts <- lapply(parts, function(p) p[1:min(length(p), 4)])
     data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
     colnames(data) <- c("chrom", "pos", "A2", "A1")
     # Ensure that 'chrom' values are integers
