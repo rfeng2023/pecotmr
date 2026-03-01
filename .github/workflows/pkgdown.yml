@@ -40,6 +40,9 @@ jobs:
       - name: Build pkgdown site
         run: pixi run --environment r44 --manifest-path /tmp/pixi/pixi.toml pkgdown_build
 
+      - name: Disable Jekyll
+        run: touch docs/.nojekyll
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 

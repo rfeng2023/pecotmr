@@ -33,7 +33,6 @@ r44 = {features = ["r44"]}
 
 [dependencies]
 "bioconductor-bioccheck" = "*"
-"r-rcpparmadillo" = ">=15"
 "r-devtools" = "*"
 "r-rcmdcheck" = "*"
 "r-covr" = "*"
