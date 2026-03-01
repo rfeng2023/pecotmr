@@ -111,8 +111,8 @@ allele_qc <- function(target_data, ref_variants, col_to_flip = NULL,
   }
     # match target & ref by chrom and position
   match_result = match_result %>%
-	mutate(variants_id_original = paste(chrom, pos, A2.target, A1.target, sep = ":")) %>%
-	mutate(variants_id_qced = paste(chrom, pos, A2.ref, A1.ref, sep = ":")) %>%
+	mutate(variants_id_original = format_variant_id(chrom, pos, A2.target, A1.target)) %>%
+	mutate(variants_id_qced = format_variant_id(chrom, pos, A2.ref, A1.ref)) %>%
 	# filter out totally same rows.
 	filter(duplicated(.) | !duplicated(.)) %>%
 	# upper case target/reference A1 A2
@@ -201,7 +201,7 @@ allele_qc <- function(target_data, ref_variants, col_to_flip = NULL,
 	match_result <- select(match_result, -(flip1.ref:keep)) %>%
 	  select(-variants_id_original, -A1.target, -A2.target) %>%
 	  rename(A1 = A1.ref, A2 = A2.ref, variant_id = variants_id_qced)
-	target_data <- target_data %>% mutate(variant_id = paste(chrom, pos, A2, A1, sep = ":"))
+	target_data <- target_data %>% mutate(variant_id = format_variant_id(chrom, pos, A2, A1))
 	if (length(setdiff(target_data %>% pull(variant_id), match_variant)) > 0) {
 	  unmatch_data <- target_data %>% filter(!variant_id %in% match_variant)
 	  result <- rbind(result, unmatch_data %>% mutate(variants_id_original = variant_id))
@@ -249,31 +249,30 @@ align_variant_names <- function(source, reference, remove_indels = FALSE, remove
     reference <- gsub("(:|_)b[0-9]+$", "", reference)
   }
   # Check if source and reference follow the expected pattern
-  source_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG*]+:[ATCG*]+$|^(chr)?[0-9]+:[0-9]+_[ATCG*]+_[ATCG*]+$", source)
-  reference_pattern <- grepl("^(chr)?[0-9]+:[0-9]+:[ATCG*]+:[ATCG*]+$|^(chr)?[0-9]+:[0-9]+_[ATCG*]+_[ATCG*]+$", reference)
+  source_pattern <- grepl("^(chr)?[0-9]+[_:][0-9]+[_:][ATCG*]+[_:][ATCG*]+$", source)
+  reference_pattern <- grepl("^(chr)?[0-9]+[_:][0-9]+[_:][ATCG*]+[_:][ATCG*]+$", reference)
 
   if (!all(source_pattern) && !all(reference_pattern)) {
-    # Both source and reference do not follow the expected pattern
     warning("Cannot unify variant names because they do not follow the expected variant naming convention chr:pos:A2:A1 or chr:pos_A2_A1.")
     return(list(aligned_variants = source, unmatched_indices = integer(0)))
   }
 
   if ((!all(source_pattern) && all(reference_pattern)) || (all(source_pattern) && !all(reference_pattern))) {
-    # One of source or reference follows the pattern, while the other does not
     stop("Source and reference have different variant naming conventions. They cannot be aligned.")
   }
-  source_has_chr_prefix <- grepl("^chr", source[1])
-  reference_has_chr_prefix <- grepl("^chr", reference[1])
 
-  source_df <- variant_id_to_df(source)
-  reference_df <- variant_id_to_df(reference)
+  # Detect reference convention to preserve in output
+  ref_convention <- detect_variant_convention(reference)
+
+  source_df <- parse_variant_id(source)
+  reference_df <- parse_variant_id(reference)
 
   qc_result <- allele_qc(
     target_data = source_df,
     ref_variants = reference_df,
     col_to_flip = NULL,
     match_min_prop = 0,
-    remove_dups = FALSE, #otherwise case like c('14:31234238:C:A','14:31234238:C:G') -- c('14:31234238:G:C','14:31234238:G:C') would not work
+    remove_dups = FALSE,
     flip_strand = TRUE,
     remove_indels = remove_indels,
     remove_strand_ambiguous = FALSE,
@@ -282,34 +281,16 @@ align_variant_names <- function(source, reference, remove_indels = FALSE, remove
 
   aligned_df <- qc_result$target_data_qced
 
-  # Determine the output format based on the reference convention
-  if (!grepl("_", reference[1])) {
-    # Reference follows "chr:pos:A2:A1" convention
-    output_format <- "colon"
-  } else {
-    # Reference follows "chr:pos_A2_A1" convention
-    output_format <- "colon_underscore"
-  }
-
-  # Format the aligned variants based on the reference convention
-  if (output_format == "colon") {
-    aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
-  } else {
-    aligned_variants <- apply(aligned_df[, c("chrom", "pos", "A2", "A1")], 1, paste, collapse = ":")
-    aligned_variants <- gsub(":(\\d+):(\\w):(\\w)", ":\\1_\\2_\\3", aligned_variants)
-  }
-
+  # Format output using reference convention (preserving user's format automatically)
+  aligned_variants <- format_variant_id(
+    aligned_df$chrom, aligned_df$pos, aligned_df$A2, aligned_df$A1,
+    convention = ref_convention
+  )
   names(aligned_variants) <- NULL
 
-  # Adjust the chr prefix in aligned_variants based on the reference convention
-  aligned_variants_has_chr_prefix <- grepl("^chr", aligned_variants[1])
-  if (reference_has_chr_prefix && !aligned_variants_has_chr_prefix) {
-    aligned_variants <- paste0("chr", aligned_variants)
-  } else if (!reference_has_chr_prefix && aligned_variants_has_chr_prefix) {
-    aligned_variants <- sub("^chr", "", aligned_variants)
-  }
-
-  unmatched_indices <- which(match(aligned_variants, reference, nomatch = 0) == 0)
+  # Normalize reference to the same output format for accurate matching
+  ref_normalized <- normalize_variant_id(reference, convention = ref_convention)
+  unmatched_indices <- which(match(aligned_variants, ref_normalized, nomatch = 0) == 0)
 
   list(
     aligned_variants = aligned_variants,

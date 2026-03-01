@@ -227,7 +227,7 @@ process_coloc_results <- function(coloc_result, LD_meta_file_path, analysis_regi
       tmp_coloc_results_fil <- ordered_results[[n]]
       tmp_coloc_results_fil_csm <- calculate_cumsum(tmp_coloc_results_fil)
       cs[[n]] <- tmp_coloc_results_fil[, 1][1:(which(tmp_coloc_results_fil_csm > coverage) %>% min())]
-      variants <- cs[[n]] %>% gsub("chr", "", .)
+      variants <- normalize_variant_id(cs[[n]])
 
       # Load and extract LD matrix
       ext_ld <- load_and_extract_ld_matrix(LD_meta_file_path, analysis_region, variants)

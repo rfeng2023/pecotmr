@@ -244,31 +244,27 @@ colocboost_analysis_pipeline <- function(region_data,
   if (!is.null(sumstat_data$sumstats)) {
     sumstats <- lapply(sumstat_data$sumstats, function(ss) {
       z <- ss$sumstats$z
-      # Prefix 'chr' only if missing to avoid 'chrchr'
-      vi <- ss$sumstats$variant_id
-      has_chr <- startsWith(as.character(vi), "chr")
-      variant <- ifelse(has_chr, as.character(vi), paste0("chr", as.character(vi)))
+      # Normalize variant IDs to canonical format (with chr prefix)
+      variant <- normalize_variant_id(as.character(ss$sumstats$variant_id))
       n <- ss$n
-      
+
       # Filter out NA values from z-scores and corresponding variants
       na_mask <- !is.na(z)
       if (sum(na_mask) == 0) {
         message("Warning: All z-scores are NA for this summary statistic dataset")
         return(data.frame("z" = numeric(0), "n" = numeric(0), "variant" = character(0)))
       }
-      
+
       data.frame("z" = z[na_mask], "n" = n, "variant" = variant[na_mask])
     })
     names(sumstats) <- names(sumstat_data$sumstats)
     LD_mat <- lapply(sumstat_data$LD_mat, function(ld) {
-      # Ensure LD dimnames have 'chr' only once
-      cn <- colnames(ld)
-      rn <- rownames(ld)
-      if (!is.null(cn)) {
-        colnames(ld) <- ifelse(startsWith(as.character(cn), "chr"), as.character(cn), paste0("chr", as.character(cn)))
+      # Normalize LD dimnames to canonical format (with chr prefix)
+      if (!is.null(colnames(ld))) {
+        colnames(ld) <- normalize_variant_id(as.character(colnames(ld)))
       }
-      if (!is.null(rn)) {
-        rownames(ld) <- ifelse(startsWith(as.character(rn), "chr"), as.character(rn), paste0("chr", as.character(rn)))
+      if (!is.null(rownames(ld))) {
+        rownames(ld) <- normalize_variant_id(as.character(rownames(ld)))
       }
       return(ld)
     })

@@ -82,7 +82,8 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
           )
           susie_cs_result_formatted <- susie_cs_result_formatted$target_data_qced[, c("gene_name", "variant_id", "bhat_x", "sbhat_x", "cs", "pip")]
         }
-        gwas_sumstats_db_extracted_imputed$variant_id <- gsub("chr", "", gwas_sumstats_db_extracted_imputed$variant_id)
+        # Normalize variant IDs to canonical format for matching
+        gwas_sumstats_db_extracted_imputed$variant_id <- normalize_variant_id(gwas_sumstats_db_extracted_imputed$variant_id)
         susie_cs_gwas_variants_merge <- intersect(susie_cs_result_formatted$variant_id, gwas_sumstats_db_extracted_imputed$variant_id)
 
         mr_format_input <- susie_cs_result_formatted[match(susie_cs_gwas_variants_merge, susie_cs_result_formatted$variant), ] %>%

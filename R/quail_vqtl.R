@@ -112,14 +112,14 @@ run_linear_regression <- function(genotype, phenotype, covariates = NULL, phenot
     scale = FALSE
   )
 
-  snp_info <- lapply(colnames(genotype), parse_snp_info)
+  snp_info <- parse_variant_id(colnames(genotype))
 
   data.frame(
     phenotype_id = if (!is.null(phenotype_id)) phenotype_id else NA,
-    chr = sapply(snp_info, function(x) x$chr),
-    pos = sapply(snp_info, function(x) x$pos),
-    alt = sapply(snp_info, function(x) x$alt),
-    ref = sapply(snp_info, function(x) x$ref),    
+    chr = snp_info$chrom,
+    pos = snp_info$pos,
+    alt = snp_info$A1,
+    ref = snp_info$A2,
     variant_id = colnames(genotype),
     beta = reg_results$betahat,
     se = reg_results$sebetahat,

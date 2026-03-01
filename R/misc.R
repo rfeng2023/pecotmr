@@ -314,50 +314,182 @@ filter_Y <- function(Y, n_nonmiss) {
 }
 
 
-format_variant_id <- function(names_vector) {
-  gsub("_", ":", names_vector)
+#' Detect the naming convention of variant IDs
+#'
+#' Examines variant ID strings to detect their format: whether they have a "chr"
+#' prefix, what separator is used between allele fields, and whether they include
+#' a genome build suffix (e.g., ":b38" or "_b38").
+#'
+#' Supported formats:
+#' \itemize{
+#'   \item All colons: \code{"chr1:100:A:G"} or \code{"1:100:A:G"}
+#'   \item Mixed colon/underscore: \code{"chr1:100_A_G"} or \code{"1:100_A_G"}
+#'   \item All underscores (PLINK BIM): \code{"chr1_100_A_G"} or \code{"1_100_A_G"}
+#' }
+#'
+#' @param ids A character vector of variant IDs.
+#' @return A list with components:
+#'   \describe{
+#'     \item{has_chr}{Logical, whether the IDs have a "chr" prefix.}
+#'     \item{allele_sep}{Character, the separator between allele fields (":" or "_").
+#'       For mixed format \code{"chr1:100_A_G"}, this is \code{"_"}.}
+#'     \item{has_build}{Logical, whether a build suffix is present.}
+#'     \item{example}{Character, the first non-NA ID for reference.}
+#'   }
+#' @noRd
+detect_variant_convention <- function(ids) {
+  # Find first non-NA element
+  first_id <- ids[!is.na(ids)][1]
+  if (is.na(first_id) || length(first_id) == 0) {
+    return(list(has_chr = FALSE, allele_sep = ":", has_build = FALSE, example = NA_character_))
+  }
+  has_chr <- grepl("^chr", first_id)
+  # Detect build suffix like :b38 or _b38 at end
+  has_build <- grepl("(:|_)b[0-9]+$", first_id)
+  # Strip build suffix for separator detection
+  id_clean <- gsub("(:|_)b[0-9]+$", "", first_id)
+  # Detect allele separator: check if variant uses underscores between allele fields
+  # This catches both full underscore ("1_100_A_G") and mixed ("chr1:100_A_G") formats
+  allele_sep <- if (grepl("_[ATCGID*]+_[ATCGID*]+$", id_clean)) "_" else ":"
+  list(has_chr = has_chr, allele_sep = allele_sep, has_build = has_build, example = first_id)
 }
 
-#' Converted  Variant ID into a properly structured data frame
-#' @param variant_id A data frame or character vector representing variant IDs.
-#'   Expected formats are a data frame with columns "chrom", "pos", "A1", "A2",
-#'   or a character vector in "chr:pos:A2:A1" or "chr:pos_A2_A1" format.
-#' @return A data frame with columns "chrom", "pos", "A1", "A2", where 'chrom'
-#'   and 'pos' are integers, and 'A1' and 'A2' are allele identifiers.
-#' @noRd
-variant_id_to_df <- function(variant_id) {
-  # Check if target_variants is already a data.frame with the required columns
-  if (is.data.frame(variant_id)) {
-    if (!all(c("chrom", "pos", "A1", "A2") %in% names(variant_id))) {
-      names(variant_id) <- c("chrom", "pos", "A2", "A1")
+#' Parse variant IDs into a data frame
+#'
+#' Converts variant IDs from any supported string format or data.frame into a
+#' standardized data.frame with integer chrom, integer pos, and character allele
+#' columns (A2, A1). Supports colon-separated ("chr1:100:A:G"), underscore-separated
+#' ("1_100_A_G"), with or without "chr" prefix, and with optional build suffix
+#' (":b38" or "_b38"). The detected input convention is stored as an attribute.
+#'
+#' @param ids A character vector of variant IDs, or a data.frame with columns
+#'   "chrom", "pos", and allele columns (A2/A1 or ref/alt or any 4-column layout).
+#' @return A data.frame with columns "chrom" (integer), "pos" (integer), "A2"
+#'   (character), "A1" (character). The detected convention is stored as
+#'   \code{attr(result, "convention")}.
+#' @export
+parse_variant_id <- function(ids) {
+  # Handle data.frame input
+  if (is.data.frame(ids)) {
+    if (all(c("chrom", "pos", "A2", "A1") %in% names(ids))) {
+      # Already has correct column names
+    } else if (all(c("chrom", "pos", "A1", "A2") %in% names(ids))) {
+      # Has A1/A2 but need to check they're in the right semantic order
+      # (A2 = ref, A1 = alt/effect) — keep as-is since column names are explicit
+    } else if (ncol(ids) >= 4) {
+      # Assume positional: chrom, pos, A2, A1
+      names(ids)[1:4] <- c("chrom", "pos", "A2", "A1")
     }
-    # Ensure that 'chrom' values are integers
-    variant_id$chrom <- ifelse(grepl("^chr", variant_id$chrom),
-      as.integer(sub("^chr", "", variant_id$chrom)), # Remove 'chr' and convert to integer
-      as.integer(variant_id$chrom)
-    ) # Convert to integer if not already
-    variant_id$pos <- as.integer(variant_id$pos)
-    return(variant_id)
+    # Detect convention from chrom column before converting
+    conv <- list(
+      has_chr = any(grepl("^chr", as.character(ids$chrom))),
+      allele_sep = ":", has_build = FALSE, example = NA_character_
+    )
+    ids$chrom <- ifelse(grepl("^chr", as.character(ids$chrom)),
+      as.integer(sub("^chr", "", as.character(ids$chrom))),
+      as.integer(ids$chrom)
+    )
+    ids$pos <- as.integer(ids$pos)
+    attr(ids, "convention") <- conv
+    return(ids)
   }
-  # Function to split a string and create a data.frame
-  create_dataframe <- function(string) {
-    string <- gsub("_", ":", string)
-    parts <- strsplit(string, ":", fixed = TRUE)
-    # Handle mixed 4-part and 5-part IDs (5th part is build suffix like b38)
-    n_parts <- vapply(parts, length, integer(1))
-    # Truncate any entries with more than 4 parts to just the first 4
-    parts <- lapply(parts, function(p) p[1:min(length(p), 4)])
-    data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
-    colnames(data) <- c("chrom", "pos", "A2", "A1")
-    # Ensure that 'chrom' values are integers
-    data$chrom <- ifelse(grepl("^chr", data$chrom),
-      as.integer(sub("^chr", "", data$chrom)), # Remove 'chr' and convert to integer
-      as.integer(data$chrom)
-    ) # Convert to integer if not already
-    data$pos <- as.integer(data$pos)
-    return(data)
+
+  # Detect convention before parsing
+  convention <- detect_variant_convention(ids)
+
+  # Normalize: convert underscores to colons, strip build suffix
+  normalized <- gsub("_", ":", ids)
+  normalized <- gsub("(:|_)b[0-9]+$", "", normalized)
+
+  # Split into parts
+  parts <- strsplit(normalized, ":", fixed = TRUE)
+  # Truncate any entries with more than 4 parts to just the first 4
+  parts <- lapply(parts, function(p) p[1:min(length(p), 4)])
+
+  data <- data.frame(do.call(rbind, parts), stringsAsFactors = FALSE)
+  colnames(data) <- c("chrom", "pos", "A2", "A1")
+
+  # Convert chrom to integer (strip chr prefix)
+  data$chrom <- ifelse(grepl("^chr", data$chrom),
+    as.integer(sub("^chr", "", data$chrom)),
+    as.integer(data$chrom)
+  )
+  data$pos <- as.integer(data$pos)
+
+  attr(data, "convention") <- convention
+  return(data)
+}
+
+#' Format variant ID strings from component columns
+#'
+#' Constructs variant ID strings from chrom, pos, A2, A1 columns.
+#' The chrom:pos separator is always a colon. The allele separator can be
+#' either colon (canonical: \code{"chr1:100:A:G"}) or underscore
+#' (mixed: \code{"chr1:100_A_G"}).
+#'
+#' When a \code{convention} object (from \code{detect_variant_convention}) is
+#' provided, the output format is driven automatically by the detected
+#' convention, so callers do not need to specify \code{chr_prefix} or
+#' \code{allele_sep} manually.
+#'
+#' @param chrom Integer or character chromosome (e.g., 1 or "chr1").
+#' @param pos Integer position.
+#' @param A2 Character reference allele.
+#' @param A1 Character alternate/effect allele.
+#' @param chr_prefix Logical, whether to add "chr" prefix. Default TRUE.
+#'   Ignored if \code{convention} is provided.
+#' @param allele_sep Character, separator between pos/A2 and A2/A1 fields.
+#'   Default \code{":"} produces canonical \code{"chr1:100:A:G"};
+#'   \code{"_"} produces mixed \code{"chr1:100_A_G"}.
+#'   Ignored if \code{convention} is provided.
+#' @param convention Optional list from \code{detect_variant_convention}.
+#'   When provided, \code{has_chr} and \code{allele_sep} are read from the
+#'   convention automatically. This is the preferred way to preserve the
+#'   user's input format.
+#' @return A character vector of formatted variant IDs.
+#' @noRd
+format_variant_id <- function(chrom, pos, A2, A1, chr_prefix = TRUE, allele_sep = ":", convention = NULL) {
+  # If convention is provided, use it to determine format automatically
+  if (!is.null(convention)) {
+    chr_prefix <- convention$has_chr
+    allele_sep <- if (!is.null(convention$allele_sep)) convention$allele_sep else ":"
   }
-  return(create_dataframe(variant_id))
+  # Strip any existing chr prefix to normalize, then re-add if requested
+  chrom_clean <- sub("^chr", "", as.character(chrom))
+  if (chr_prefix) {
+    paste0("chr", chrom_clean, ":", pos, allele_sep, A2, allele_sep, A1)
+  } else {
+    paste0(chrom_clean, ":", pos, allele_sep, A2, allele_sep, A1)
+  }
+}
+
+#' Normalize variant IDs to canonical format
+#'
+#' One-step convenience function: parses variant IDs in any supported format
+#' and re-formats them. By default, outputs the canonical format
+#' (\code{"chr{N}:{pos}:{A2}:{A1}"}). When a \code{convention} object is
+#' provided, the output preserves the user's original format automatically.
+#'
+#' @param ids A character vector of variant IDs in any supported format.
+#' @param chr_prefix Logical, whether to include "chr" prefix. Default TRUE.
+#'   Ignored if \code{convention} is provided.
+#' @param convention Optional list from \code{detect_variant_convention} or
+#'   \code{attr(parse_variant_id(ids), "convention")}. When provided, the
+#'   output format is driven automatically by the detected convention.
+#' @return A character vector of normalized variant IDs.
+#' @export
+normalize_variant_id <- function(ids, chr_prefix = TRUE, convention = NULL) {
+  parsed <- parse_variant_id(ids)
+  if (!is.null(convention)) {
+    format_variant_id(parsed$chrom, parsed$pos, parsed$A2, parsed$A1, convention = convention)
+  } else {
+    format_variant_id(parsed$chrom, parsed$pos, parsed$A2, parsed$A1, chr_prefix = chr_prefix)
+  }
+}
+
+# Backward-compatible alias used internally — delegates to parse_variant_id
+variant_id_to_df <- function(variant_id) {
+  parse_variant_id(variant_id)
 }
 
 #' @importFrom stringr str_split
@@ -380,29 +512,6 @@ parse_region <- function(region) {
   return(df)
 }
 
-#' @export
-parse_variant_id <- function(region) {
-  variants_split <- strsplit(region, ":")
-  variants_df <- data.frame(
-    chrom = sapply(variants_split, `[`, 1),
-    pos = as.integer(sapply(variants_split, `[`, 2)),
-    ref = sapply(variants_split, `[`, 3),
-    alt = sapply(variants_split, `[`, 4),
-    stringsAsFactors = FALSE
-  )
-  return(variants_df)
-}
-
-#' @export
-parse_snp_info <- function(snp) {
-  parts <- strsplit(snp, ":")[[1]]
-  list(
-    chr = as.numeric(gsub("chr", "", parts[1])),
-    pos = as.numeric(parts[2]),
-    ref = parts[3],
-    alt = parts[4]
-  )
-}
 
 # Retrieve a nested element from a list structure
 #' @export

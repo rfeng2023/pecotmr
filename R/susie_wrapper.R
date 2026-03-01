@@ -65,22 +65,25 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
                                  twas_weights_table = c("weights", context), combined_LD_variants, match_min_prop = 0.2) {
   # Intersect the rownames of weights with keep_variants
   twas_weights_variants <- get_nested_element(twas_weights_results, variable_name_obj)
-  twas_weights_variants <- if (!startsWith(twas_weights_variants[1], "chr")) paste0("chr", twas_weights_variants) else twas_weights_variants
+  # Normalize to canonical format (with chr prefix)
+  twas_weights_variants <- normalize_variant_id(twas_weights_variants)
   # allele flip twas weights matrix variants name
   if (allele_qc) {
     weights_matrix <- get_nested_element(twas_weights_results, twas_weights_table)
     if (!all(c("chrom", "pos", "A2", "A1") %in% colnames(weights_matrix))) {
-      weights_matrix <- cbind(variant_id_to_df(twas_weights_variants), weights_matrix)
+      weights_matrix <- cbind(parse_variant_id(twas_weights_variants), weights_matrix)
     }
     weights_matrix_qced <- allele_qc(weights_matrix, combined_LD_variants, colnames(weights_matrix)[!colnames(weights_matrix) %in% c(
       "chrom",
       "pos", "A2", "A1"
     )], match_min_prop = match_min_prop)
-    original_idx <- match(paste0("chr", weights_matrix_qced$qc_summary$variants_id_original), twas_weights_variants)
+    # allele_qc now outputs canonical variant_ids (with chr prefix)
+    original_idx <- match(weights_matrix_qced$qc_summary$variants_id_original, twas_weights_variants)
     intersected_indices <- original_idx[weights_matrix_qced$qc_summary$keep == TRUE]
   } else {
-    keep_variants_transformed <- ifelse(!startsWith(keep_variants, "chr"), paste0("chr", keep_variants), keep_variants)
-    intersected_variants <- intersect(twas_weights_variants, keep_variants_transformed)
+    # Normalize keep_variants to canonical format for matching
+    keep_variants_normalized <- normalize_variant_id(keep_variants)
+    intersected_variants <- intersect(twas_weights_variants, keep_variants_normalized)
     intersected_indices <- match(intersected_variants, twas_weights_variants)
   }
   if (length(intersected_indices) == 0) {
@@ -98,7 +101,8 @@ adjust_susie_weights <- function(twas_weights_results, keep_variants, allele_qc 
   # Convert lbf_matrix to alpha and calculate adjusted xQTL coefficients
   adjusted_xqtl_alpha <- lbf_to_alpha(lbf_matrix_subset)
   adjusted_xqtl_coef <- colSums(adjusted_xqtl_alpha * mu_subset) / x_column_scal_factors_subset
-  return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = paste0("chr", weights_matrix_qced$target_data_qced$variant_id)))
+  # allele_qc now outputs canonical variant_ids (with chr prefix) — no need to add chr
+  return(list(adjusted_susie_weights = adjusted_xqtl_coef, remained_variants_ids = weights_matrix_qced$target_data_qced$variant_id))
 }
 
 
@@ -363,7 +367,7 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
   mode <- match.arg(mode)
   # Initialize result list
   res <- list(
-    variant_names = format_variant_id(names(susie_output$pip))
+    variant_names = normalize_variant_id(names(susie_output$pip))
   )
   analysis_script <- load_script()
   if (analysis_script != "") res$analysis_script <- analysis_script

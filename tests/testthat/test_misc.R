@@ -72,7 +72,7 @@ test_that("Test filter_Y is-matrix",{
 })
 
 test_that("Test format_variant_id",{
-    expect_equal(format_variant_id(c("chr1_123_G_C", "chr1_132_A_T")), c("chr1:123:G:C", "chr1:132:A:T"))
+    expect_equal(format_variant_id(c(1, 1), c(123, 132), c("G", "A"), c("C", "T")), c("chr1:123:G:C", "chr1:132:A:T"))
 })
 
 z <- c(1, 2, 3, 4, 5)

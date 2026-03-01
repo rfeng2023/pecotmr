@@ -194,7 +194,7 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
   if (!is.null(keep_variants_path)) {
     keep_variants <- vroom(keep_variants_path)
     if (!("chrom" %in% names(keep_variants)) | !("pos" %in% names(keep_variants))) {
-      keep_variants <- do.call(rbind, lapply(strsplit(format_variant_id(keep_variants[[1]]), ":", fixed = TRUE), function(x) {
+      keep_variants <- do.call(rbind, lapply(strsplit(normalize_variant_id(keep_variants[[1]]), ":", fixed = TRUE), function(x) {
         data.frame(
           chrom = x[1],
           pos = as.integer(x[2]),
@@ -346,7 +346,7 @@ prepare_data_list <- function(geno_bed, phenotype, covariate, imiss_cutoff, maf_
         mac_val <- if (nrow(filtered_geno_bed) == 0) 0 else (mac_cutoff / (2 * nrow(filtered_geno_bed)))
         maf_val <- max(maf_cutoff, mac_val)
         filtered_data <- filter_X(filtered_geno_bed, imiss_cutoff, maf_val, var_thresh = xvar_cutoff)
-        colnames(filtered_data) <- format_variant_id(colnames(filtered_data)) # Format column names right after filtering
+        colnames(filtered_data) <- normalize_variant_id(colnames(filtered_data)) # Normalize to canonical format
         filtered_data
       })
     ) %>%
@@ -371,10 +371,10 @@ prepare_X_matrix <- function(geno_bed, data_list, imiss_cutoff, maf_cutoff, mac_
   maf_val <- max(maf_cutoff, mac_cutoff / (2 * length(common_samples)))
   # Apply further filtering on X
   X_filtered <- filter_X(X_filtered, imiss_cutoff, maf_val, xvar_cutoff)
-  colnames(X_filtered) <- format_variant_id(colnames(X_filtered))
+  colnames(X_filtered) <- normalize_variant_id(colnames(X_filtered))
 
   # To keep a log message
-  variants <- as.data.frame(do.call(rbind, lapply(format_variant_id(colnames(X_filtered)), function(x) strsplit(x, ":")[[1]][1:2])), stringsAsFactors = FALSE)
+  variants <- as.data.frame(do.call(rbind, lapply(colnames(X_filtered), function(x) strsplit(x, ":")[[1]][1:2])), stringsAsFactors = FALSE)
   message(paste0("Dimension of input genotype data is ", nrow(X_filtered), " rows and ", ncol(X_filtered), " columns for genomic region of ", variants[1, 1], ":", min(as.integer(variants[, 2])), "-", max(as.integer(variants[, 2]))))
   return(X_filtered)
 }
@@ -1126,8 +1126,7 @@ load_multitask_regional_data <- function(region, # a string of chr:start-end for
         if (nrow(tmp$sumstats) == 0){ return(NULL) }
         if (!("variant_id" %in% colnames(tmp$sumstats))) {
           tmp$sumstats <- tmp$sumstats %>%
-            rowwise() %>%
-            mutate(variant_id = paste0(c(chrom, pos, A1, A2), collapse = ":"))
+            mutate(variant_id = format_variant_id(chrom, pos, A2, A1))
         }
         return(tmp)
       })
@@ -1349,8 +1348,12 @@ load_ld_snp_info <- function(ld_meta_file_path, region_of_interest) {
       warning("Unexpected number of columns; skipping this element.")
       return(NULL)
     }
-    info_table$id <- gsub("chr", "", gsub("_", ":", info_table$id))
+    info_table$id <- normalize_variant_id(info_table$id)
     return(info_table)
-  }), sapply(names(bim_data), function(x) gsub("chr", "", paste(strsplit(basename(x), "[_:/.]")[[1]][1:3], collapse = "_"))))
+  }), sapply(names(bim_data), function(x) {
+    parts <- strsplit(basename(x), "[_:/.]")[[1]][1:3]
+    parts[1] <- sub("^chr", "", parts[1])
+    paste(parts, collapse = "_")
+  }))
   return(snp_info)
 }

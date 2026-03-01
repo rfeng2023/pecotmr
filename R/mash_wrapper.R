@@ -562,6 +562,7 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, e
 
     # Split the variant vector into components
     variant_df <- parse_variant_id(variant)
+    conv <- attr(variant_df, "convention")
 
     # get the region of interest
     min_pos <- min(variant_df$pos)
@@ -570,7 +571,9 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, e
     if (length(chrom) != 1) {
       stop("Variants are from multiple chromosomes. Cannot create a single range string.")
     }
-    region <- paste0(chrom, ":", min_pos, "-", max_pos)
+    # Reconstruct chrom string with original convention for tabix
+    chrom_str <- if (conv$has_chr) paste0("chr", chrom) else as.character(chrom)
+    region <- paste0(chrom_str, ":", min_pos, "-", max_pos)
     ref_table <- tabix_region(filter_file, region)
     if (is.null(ref_table)) {
       stop("No variants in the region.")
@@ -579,7 +582,8 @@ load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, e
     if (!all(c("#CHROM", "POS") %in% colnames(ref_table))) {
       stop("Filter file must contain columns: #CHROM, POS.")
     }
-    matched_indices <- which(variant_df$chrom %in% ref_table$`#CHROM` & variant_df$pos %in% ref_table$POS)
+    ref_chrom <- as.integer(sub("^chr", "", ref_table$`#CHROM`))
+    matched_indices <- which(variant_df$chrom %in% ref_chrom & variant_df$pos %in% ref_table$POS)
     if (!is.null(max_rows_selected) && max_rows_selected > 0 && max_rows_selected < length(matched_indices)) {
       selected_rows <- sample(length(matched_indices), max_rows_selected)
       matched_indices <- matched_indices[selected_rows]
@@ -863,7 +867,7 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
            df2 <- df[, c(id_column, value_column)]
              if (!is.null(ld_meta_file)) {
             # Step 2: Split 'variants' to extract chromosomal info
-            cohort_variants_df <- variant_id_to_df(parse_variant_id(df2[, c(id_column)]))
+            cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
             # Step 3: Combine extracted chromosomal info with value column
             cohort_df <- cbind(cohort_variants_df, value = df2[, value_column, drop = FALSE])
 
@@ -892,14 +896,13 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
               group_by(start, end) %>%
               group_map(~ process_group(.x)) %>%
               bind_rows() %>%
-              mutate(variant_id = paste0("chr", variant_id)) %>%
               select(c("variant_id", value_column)) %>%
               rename("variants" = "variant_id")
             # Rename columns to avoid duplication
             colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
           } else if (!is.null(ref_panel)) {
             # Step 2: Split 'variants' to extract chromosomal info
-            cohort_variants_df <- variant_id_to_df(parse_variant_id(df2[, c(id_column)]))
+            cohort_variants_df <- parse_variant_id(df2[, c(id_column)])
             # Step 3: Combine extracted chromosomal info with value column
             cohort_df <- cbind(cohort_variants_df, value = df2[, value_column, drop = FALSE])
           
@@ -908,7 +911,7 @@ merge_sumstats_matrices <- function(matrix_list, value_column, ref_panel = NULL,
                 remove_indels = FALSE, remove_strand_ambiguous = FALSE,
                 flip_strand = FALSE, remove_unmatched = TRUE, remove_same_vars = FALSE)$target_data_qced
               
-            final_df <- flipped_data %>% mutate(variant_id = paste0("chr", variant_id)) %>%
+            final_df <- flipped_data %>%
                 select(c("variant_id", value_column))
             colnames(final_df) <- c(id_column, paste0(value_column, "_", i))
           } else {
@@ -1244,10 +1247,8 @@ extract_flatten_sumstats_from_nested <- function(data, extract_inf = "z", max_de
         result <- data.frame(variants = variant_names)
         result[[extract_inf]] <- result_column
 
-        # Prefix variants with "chr" if not already
-        if (!all(grepl("^chr", result$variants))) {
-          result$variants <- paste0("chr", result$variants)
-        }
+        # Normalize variants to canonical format (with chr prefix)
+        result$variants <- normalize_variant_id(result$variants)
 
         return(result)
       }
@@ -1256,9 +1257,7 @@ extract_flatten_sumstats_from_nested <- function(data, extract_inf = "z", max_de
       for (name in names(element)) {
         result <- find_nested(element[[name]], current_depth + 1)
         if (!is.null(result)) {
-          if (!all(grepl("^chr", result$variants))) {
-            result$variants <- paste0("chr", result$variants)
-          }
+          result$variants <- normalize_variant_id(result$variants)
           return(result)
         }
       }

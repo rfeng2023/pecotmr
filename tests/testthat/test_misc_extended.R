@@ -35,29 +35,96 @@ test_that("parse_region returns non-single-string input unchanged", {
 })
 
 # ---- parse_variant_id ----
-test_that("parse_variant_id parses single variant", {
+test_that("parse_variant_id parses single variant with chr prefix", {
   result <- parse_variant_id("chr1:12345:A:G")
-  expect_equal(result$chrom, "chr1")
+  expect_equal(result$chrom, 1L)
   expect_equal(result$pos, 12345L)
-  expect_equal(result$ref, "A")
-  expect_equal(result$alt, "G")
+  expect_equal(result$A2, "A")
+  expect_equal(result$A1, "G")
+  conv <- attr(result, "convention")
+  expect_true(conv$has_chr)
+  expect_equal(conv$allele_sep, ":")
+})
+
+test_that("parse_variant_id parses single variant without chr prefix", {
+  result <- parse_variant_id("5:12345:A:G")
+  expect_equal(result$chrom, 5L)
+  expect_equal(result$pos, 12345L)
+  expect_equal(result$A2, "A")
+  expect_equal(result$A1, "G")
+  conv <- attr(result, "convention")
+  expect_false(conv$has_chr)
 })
 
 test_that("parse_variant_id parses multiple variants", {
   ids <- c("chr1:100:A:G", "chr2:200:C:T", "chr3:300:G:A")
   result <- parse_variant_id(ids)
   expect_equal(nrow(result), 3)
-  expect_equal(result$chrom, c("chr1", "chr2", "chr3"))
+  expect_equal(result$chrom, c(1L, 2L, 3L))
   expect_equal(result$pos, c(100L, 200L, 300L))
+  expect_equal(result$A2, c("A", "C", "G"))
+  expect_equal(result$A1, c("G", "T", "A"))
 })
 
-# ---- parse_snp_info ----
-test_that("parse_snp_info extracts components", {
-  result <- parse_snp_info("chr5:12345:A:G")
-  expect_equal(result$chr, 5)
-  expect_equal(result$pos, 12345)
-  expect_equal(result$ref, "A")
-  expect_equal(result$alt, "G")
+# ---- detect_variant_convention ----
+test_that("detect_variant_convention detects chr prefix and allele separators", {
+  conv <- pecotmr:::detect_variant_convention(c("chr1:100:A:G", "chr2:200:C:T"))
+  expect_true(conv$has_chr)
+  expect_equal(conv$allele_sep, ":")
+  expect_false(conv$has_build)
+
+  conv2 <- pecotmr:::detect_variant_convention(c("1_100_A_G", "2_200_C_T"))
+  expect_false(conv2$has_chr)
+  expect_equal(conv2$allele_sep, "_")
+
+  conv3 <- pecotmr:::detect_variant_convention(c("chr1:100:A:G:b38"))
+  expect_true(conv3$has_build)
+
+  # Mixed format: colon between chrom:pos, underscore between alleles
+  conv4 <- pecotmr:::detect_variant_convention(c("chr1:100_A_G"))
+  expect_true(conv4$has_chr)
+  expect_equal(conv4$allele_sep, "_")
+
+  # Mixed format without chr prefix
+  conv5 <- pecotmr:::detect_variant_convention(c("1:100_A_G"))
+  expect_false(conv5$has_chr)
+  expect_equal(conv5$allele_sep, "_")
+})
+
+# ---- normalize_variant_id ----
+test_that("normalize_variant_id normalizes various formats", {
+  # Underscore to canonical
+  expect_equal(normalize_variant_id("1_100_A_G"), "chr1:100:A:G")
+  # Already canonical
+  expect_equal(normalize_variant_id("chr1:100:A:G"), "chr1:100:A:G")
+  # Without chr prefix, default adds it
+  expect_equal(normalize_variant_id("1:100:A:G"), "chr1:100:A:G")
+  # With chr_prefix = FALSE
+  expect_equal(normalize_variant_id("chr1:100:A:G", chr_prefix = FALSE), "1:100:A:G")
+  # With build suffix
+  expect_equal(normalize_variant_id("chr1:100:A:G:b38"), "chr1:100:A:G")
+  # Mixed format to canonical
+  expect_equal(normalize_variant_id("chr1:100_A_G"), "chr1:100:A:G")
+  # Convention-driven output preserves user format
+  conv <- pecotmr:::detect_variant_convention(c("chr1:100_A_G"))
+  expect_equal(normalize_variant_id("1:200:C:T", convention = conv), "chr1:200_C_T")
+})
+
+# ---- format_variant_id convention-driven ----
+test_that("format_variant_id uses convention parameter automatically", {
+  # Canonical convention (default)
+  expect_equal(pecotmr:::format_variant_id(1, 100, "A", "G"), "chr1:100:A:G")
+
+  # Convention-driven: mixed format
+  conv_mixed <- list(has_chr = TRUE, allele_sep = "_")
+  expect_equal(pecotmr:::format_variant_id(1, 100, "A", "G", convention = conv_mixed), "chr1:100_A_G")
+
+  # Convention-driven: no chr, underscore alleles
+  conv_nochr <- list(has_chr = FALSE, allele_sep = "_")
+  expect_equal(pecotmr:::format_variant_id(1, 100, "A", "G", convention = conv_nochr), "1:100_A_G")
+
+  # Convention overrides explicit chr_prefix parameter
+  expect_equal(pecotmr:::format_variant_id(1, 100, "A", "G", chr_prefix = FALSE, convention = conv_mixed), "chr1:100_A_G")
 })
 
 # ---- variant_id_to_df ----
@@ -413,10 +480,14 @@ test_that("find_data returns list at depth 0", {
 })
 
 # ---- format_variant_id ----
-test_that("format_variant_id replaces underscores with colons", {
-  expect_equal(pecotmr:::format_variant_id("1_100_A_G"), "1:100:A:G")
-  expect_equal(pecotmr:::format_variant_id(c("1_100_A_G", "2_200_C_T")),
-               c("1:100:A:G", "2:200:C:T"))
+test_that("format_variant_id constructs canonical IDs", {
+  expect_equal(pecotmr:::format_variant_id(1, 100, "A", "G"), "chr1:100:A:G")
+  expect_equal(pecotmr:::format_variant_id(c(1, 2), c(100, 200), c("A", "C"), c("G", "T")),
+               c("chr1:100:A:G", "chr2:200:C:T"))
+  # Without chr prefix
+  expect_equal(pecotmr:::format_variant_id(1, 100, "A", "G", chr_prefix = FALSE), "1:100:A:G")
+  # Handles chr-prefixed input chrom
+  expect_equal(pecotmr:::format_variant_id("chr1", 100, "A", "G"), "chr1:100:A:G")
 })
 
 # ---- is_zero_variance (internal) ----

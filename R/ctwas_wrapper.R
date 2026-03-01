@@ -15,7 +15,7 @@ ctwas_bimfile_loader <- function(bim_file_path) {
   } else {
     colnames(snp_info) <- c("chrom", "id", "GD", "pos", "alt", "ref")
   }
-  snp_info$id <- gsub("_", ":", gsub("chr", "", snp_info$id))
+  snp_info$id <- normalize_variant_id(snp_info$id)
   return(snp_info)
 }
 
@@ -25,7 +25,7 @@ ctwas_bimfile_loader <- function(bim_file_path) {
 get_ctwas_meta_data <- function(ld_meta_data_file, subset_region_ids = NULL) {
   LD_info <- as.data.frame(vroom(ld_meta_data_file))
   colnames(LD_info)[1] <- "chrom"
-  LD_info$region_id <- gsub("chr", "", paste(LD_info$chrom, LD_info$start, LD_info$end, sep = "_"))
+  LD_info$region_id <- paste(as.integer(sub("^chr", "", LD_info$chrom)), LD_info$start, LD_info$end, sep = "_")
   LD_info$LD_file <- paste0(dirname(ld_meta_data_file), "/", gsub(",.*$", "", LD_info$path))
   LD_info$SNP_file <- paste0(LD_info$LD_file, ".bim")
   LD_info <- LD_info[, c("region_id", "LD_file", "SNP_file")]
@@ -58,13 +58,13 @@ trim_ctwas_variants <- function(region_data, twas_weight_cutoff = 1e-5, cs_min_c
       for (L in 1:length(region_data$susie_weights_intermediate[[molecular_id]][[context]]$cs_variants)) {
         # we includ all variants in $cs_variant if min_abs_corr > cs_min_cor for the set
         if (cs_min_abs_cor[L] >= cs_min_cor) {
-          cs_variants <- gsub("chr", "", region_data$susie_weights_intermediate[[molecular_id]][[context]]$cs_variants[[L]])
+          cs_variants <- region_data$susie_weights_intermediate[[molecular_id]][[context]]$cs_variants[[L]]
           selected_variants_by_context <- cs_variants[cs_variants %in% rownames(weight_list$wgt)]
         }
       }
     }
     context_pip <- region_data$susie_weights_intermediate[[molecular_id]][[context]]$pip
-    names(context_pip) <- gsub("chr", "", names(context_pip))
+    # variant IDs are in canonical chr-prefix format from allele_qc pipeline
     high_pip_variants <- names(context_pip[context_pip > min_pip_cutoff])[names(context_pip[context_pip > min_pip_cutoff]) %in% rownames(weight_list$wgt)]
     selected_variants_by_context <- unique(c(selected_variants_by_context, high_pip_variants))
 
