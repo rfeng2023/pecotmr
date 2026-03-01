@@ -67,8 +67,10 @@ get_hierarchical_clusters <- function(cormat, between_cluster = 0.8) {
 #' @noRd
 ensure_continuous_clusters <- function(index) {
   n <- length(index)
-  new_index <- index
+  if (n <= 1) return(index)
+  new_index <- integer(n)
   cluster_counter <- 1
+  new_index[1] <- cluster_counter
 
   # Traverse the index to ensure continuous clusters
   for (i in 2:n) {

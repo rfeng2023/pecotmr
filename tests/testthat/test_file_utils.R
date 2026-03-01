@@ -227,12 +227,26 @@ test_that("Test load_genotype_region with region and no indels",{
   expect_equal(colnames(res), bim_file[!indels, ]$X2)
 })
 
-test_that("Test load_covariate_data",{
-  set.seed(1)
+test_that("Test load_covariate_data reads tab-delimited file", {
+  # Create a temp covariate file: first column is sample ID, rest are numeric
+  tmp <- tempfile(fileext = ".tsv")
+  writeLines(c("SampleID\tPC1\tPC2", "S1\t0.1\t0.2", "S2\t0.3\t0.4"), tmp)
+  result <- load_covariate_data(tmp)
+  expect_type(result, "list")
+  expect_length(result, 1)
+  # Result should be transposed matrix (covariates x samples)
+  expect_true(is.matrix(result[[1]]))
+  file.remove(tmp)
 })
 
-test_that("Test load_phenotype_data",{
-  set.seed(1)
+test_that("Test load_phenotype_data errors on invalid extract_region_name", {
+  tmp <- tempfile(fileext = ".tsv")
+  writeLines(c("ID\tgene1\tgene2", "S1\t1.0\t2.0"), tmp)
+  expect_error(
+    load_phenotype_data(tmp, region = NULL, extract_region_name = "not_a_list"),
+    "must be NULL or a list"
+  )
+  file.remove(tmp)
 })
 
 test_that("Test filter_by_common_samples",{

@@ -1,10 +1,10 @@
 ---
-title: "Enrichment analysis of molecular QTL in genetic variants associated with complex traits"
+title: "Molecular QTL Enrichment Analysis for Complex Traits"
 author: "Ru Feng"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Enrichment analysis of molecular QTL in genetic variants associated with complex traits}
+  %\VignetteIndexEntry{Molecular QTL Enrichment Analysis for Complex Traits}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

@@ -134,9 +134,9 @@ twas_weights_cv <- function(X, Y, fold = NULL, sample_partitions = NULL, weight_
   # Create or use provided folds
   if (!is.null(fold)) {
     if (!is.null(sample_partitions)) {
-      if (fold != length(unique(sample_partition$Fold))) {
+      if (fold != length(unique(sample_partitions$Fold))) {
         message(paste0(
-          "fold number provided does not match with sample partition, performing ", length(unique(sample_partition$Fold)),
+          "fold number provided does not match with sample partition, performing ", length(unique(sample_partitions$Fold)),
           " fold cross validation based on provided sample partition. "
         ))
       }

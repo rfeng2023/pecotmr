@@ -1,10 +1,10 @@
 ---
-title: "Intro to mr.mash"
+title: "Multi-context TWAS Weights with mr.mash"
 author: "Chunming Liu and Anqi Wang"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Intro to mr.mash}
+  %\VignetteIndexEntry{Multi-context TWAS Weights with mr.mash}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

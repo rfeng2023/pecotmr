@@ -174,8 +174,8 @@ test_that("load_twas_weights raises error if different number of conditions per 
   weight_db <- setup_weight_db_vector(n_rds = 2, n_cond = 4)
   expect_true(
     inherits(
-      load_twas_weights(weight_db$weight_paths, conditions = "not_found", variable_name_obj = c("preset_variants_result", "variant_names"),
-                       susie_obj = c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights"),
+      suppressWarnings(load_twas_weights(weight_db$weight_paths, conditions = "not_found", variable_name_obj = c("preset_variants_result", "variant_names"),
+                       susie_obj = c("preset_variants_result", "susie_result_trimmed"),twas_weights_table = "twas_weights")),
       "try-error"))
   cleanup_weight_db_vector(weight_db$weight_paths)
 })

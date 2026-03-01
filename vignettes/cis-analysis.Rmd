@@ -1,10 +1,10 @@
 ---
-title: "cis-QTL analysis and GWAS integration workflow"
+title: "Cis-QTL Analysis and GWAS Integration Workflow"
 author: "Anqi Wang and Gao Wang"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{cis-QTL analysis and GWAS integration workflow}
+  %\VignetteIndexEntry{Cis-QTL Analysis and GWAS Integration Workflow}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---

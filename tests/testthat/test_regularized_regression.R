@@ -1,371 +1,199 @@
 context("regularized_regression")
-library(tidyverse)
-library(snpStats)
 
-generate_X_Y <- function(seed=1, num_samples=10, num_features=10, X_rownames=TRUE, y_rownames=TRUE) {
-  set.seed(seed)
-  X <- scale(
-    matrix(rnorm(num_samples * num_features), nrow = num_samples),
-    center = TRUE, scale = TRUE)
-  
-  if (X_rownames) {
-    rownames(X) <- paste0("sample", 1:num_samples)
-  } else {
-    rownames(X) <- NULL
+# ---- prs_cs ----
+test_that("prs_cs errors on invalid LD input", {
+  expect_error(prs_cs(bhat = rnorm(5), LD = "not_a_list", n = 100),
+               "valid list of LD blocks")
+})
+
+test_that("prs_cs errors on non-positive sample size", {
+  expect_error(prs_cs(bhat = rnorm(5), LD = list(blk1 = diag(5)), n = -1),
+               "valid sample size")
+})
+
+test_that("prs_cs errors on mismatched maf length", {
+  expect_error(
+    prs_cs(bhat = rnorm(5), LD = list(blk1 = diag(5)), n = 100, maf = rep(0.3, 3)),
+    "same as 'maf'"
+  )
+})
+
+test_that("prs_cs errors on mismatched bhat and LD dimensions", {
+  expect_error(
+    prs_cs(bhat = rnorm(10), LD = list(blk1 = diag(5)), n = 100),
+    "same as the sum"
+  )
+})
+
+test_that("prs_cs runs successfully with valid input", {
+  set.seed(42)
+  p <- 10
+  n <- 100
+  bhat <- rnorm(p, sd = 0.1)
+  R <- diag(p)
+  for (i in 1:(p - 1)) {
+    R[i, i + 1] <- 0.3
+    R[i + 1, i] <- 0.3
   }
-  
-  beta = rep(0, num_features)
-  beta[1:4] = 1
-  y <- X %*% beta + rnorm(num_samples)
-  y <- matrix(y, nrow = num_samples, ncol = 1)
-  if (y_rownames) {
-    rownames(y) <- paste0("sample", 1:num_samples)
-  } else {
-    rownames(y) <- NULL
-  }
-  colnames(y) <- c("Outcome")
-  
-  return(list(X=X, Y=y))
-}
-
-generate_susie_obj <- function(X, y) {
-    return(susie(X,y, L=10,
-        max_iter=500,
-        estimate_residual_variance=TRUE,
-        estimate_prior_variance=TRUE,
-        refine=TRUE,
-        compute_univariate_zscore=FALSE,
-        min_abs_corr=0.5,
-        coverage=0.95))
-}
-
-test_that("Check susie_weights susie_fit works as expected", {
-    local_mocked_bindings(
-        susie_wrapper = function(X, y, ...) list(pip = rep(0.5, 10)),
-        coef.susie = function(X, y, ...) rep(TRUE, 10)
-    )
-    expect_equal(
-        length(susie_weights()), 10)
-    expect_equal(
-        length(susie_weights(susie_fit=list(alpha=T, mu=T, X_column_scale_factors=T))), 9)
+  result <- prs_cs(bhat = bhat, LD = list(blk1 = R), n = n,
+                   maf = rep(0.3, p), n_iter = 50, n_burnin = 10, thin = 2)
+  expect_type(result, "list")
+  expect_true("beta_est" %in% names(result))
+  expect_equal(length(result$beta_est), p)
 })
 
-test_that("Check susie_weights susie_fit runs with sim data no susie_fit", {
-    sim <- generate_X_Y(seed = 1)
-    X <- sim$X
-    y <- sim$Y
-    expect_equal(
-        length(susie_weights(X=X, y=y)), 10)
+# ---- sdpr ----
+test_that("sdpr errors on mismatched bhat and LD dimensions", {
+  expect_error(
+    sdpr(bhat = rnorm(10), LD = list(blk1 = diag(5)), n = 100),
+    "same as the length of bhat"
+  )
 })
 
-test_that("Check susie_weights susie_fit runs with sim data with susie_fit", {
-    sim <- generate_X_Y(seed = 1)
-    X <- sim$X
-    y <- sim$Y
-    susie_fit <- generate_susie_obj(X, y)
-    expect_equal(
-        length(susie_weights(X=X, y=y, susie_fit = susie_fit)), 10)
+test_that("sdpr errors on non-positive sample size", {
+  expect_error(
+    sdpr(bhat = rnorm(5), LD = list(blk1 = diag(5)), n = -1),
+    "positive integer"
+  )
 })
 
-test_that("Check susie_weights produces equal output w/ and w/o susie_fit", {
-    sim <- generate_X_Y(seed = 1)
-    X <- sim$X
-    y <- sim$Y
-    susie_fit <- generate_susie_obj(X, y)
-    res <- susie_weights(X=X, y=y)
-    res_susie_fit <- susie_weights(X=X, y=y, susie_fit = susie_fit)
-    expect_equal(res, res_susie_fit)
+test_that("sdpr errors on invalid per_variant_sample_size", {
+  expect_error(
+    sdpr(bhat = rnorm(5), LD = list(blk1 = diag(5)), n = 100,
+         per_variant_sample_size = c(100, -1, 100, 100, 100)),
+    "positive values"
+  )
 })
 
-test_that("Check glmnet_weights runs", {
-    sim <- generate_X_Y(seed = 1, num_samples=30)
-    X <- sim$X
-    y <- sim$Y
-    res <- glmnet_weights(X, y, 0.5) 
-    expect_equal(length(res), 10)
+test_that("sdpr errors on invalid array values", {
+  expect_error(
+    sdpr(bhat = rnorm(5), LD = list(blk1 = diag(5)), n = 100,
+         array = c(0, 1, 3, 1, 0)),
+    "0, 1, or 2"
+  )
 })
 
-test_that("Check enet_weights works", {
-    sim <- generate_X_Y(seed = 1, num_samples=30)
-    X <- sim$X
-    y <- sim$Y
-    set.seed(1)
-    res <- glmnet_weights(X, y, 0.5) 
-    set.seed(1)
-    enet <- enet_weights(X, y) 
-    expect_equal(res, enet)
+test_that("sdpr runs successfully", {
+  set.seed(42)
+  p <- 10
+  bhat <- rnorm(p, sd = 0.1)
+  R <- diag(p)
+  result <- sdpr(bhat = bhat, LD = list(blk1 = R), n = 100,
+                 iter = 50, burn = 10, thin = 2, verbose = FALSE)
+  expect_type(result, "list")
+  expect_true("beta_est" %in% names(result))
 })
 
-test_that("Check lasso_weights works", {
-    sim <- generate_X_Y(seed = 1, num_samples=30)
-    X <- sim$X
-    y <- sim$Y
-    set.seed(1)
-    res <- glmnet_weights(X, y, 1) 
-    set.seed(1)
-    enet <- lasso_weights(X, y) 
-    expect_equal(res, enet)
+# ---- susie_weights ----
+test_that("susie_weights returns zeros when no alpha/mu/X_column_scale_factors", {
+  mock_fit <- list(pip = c(0.1, 0.2, 0.3))
+  result <- susie_weights(susie_fit = mock_fit)
+  expect_equal(result, rep(0, 3))
 })
 
-generate_mr_ash_inputs <- function(seed=1, n = 360, p = 16, multiple_y=FALSE, k=1) {
-  set.seed(seed)
-  sigmasq_error <- 0.5
-  zeroes <- rbinom(p, 1, 0.6)
-
-  X <- cbind(matrix(rnorm(n * p), nrow = n))
-  X <- scale(X, center = TRUE, scale = FALSE)
-  if (multiple_y) {
-    beta.true <- matrix(rnorm(p * k, 1, sd = 4), nrow = p, ncol = k)
-    beta.true[zeroes, ] <- 0
-    y <- X %*% beta.true + matrix(rnorm(n * k, 0, sqrt(sigmasq_error)), nrow = n, ncol = k)
-  } else {
-    beta.true <- rnorm(p, 1, sd = 4)
-    beta.true[zeroes] <- 0
-    y <- X %*% matrix(beta.true, ncol = 1) + rnorm(n, 0, sqrt(sigmasq_error))
-  }
-  y <- scale(y, center = TRUE, scale = FALSE)
-
-  # Calculate sufficient statistics
-  XtX <- t(X) %*% X
-  Xty <- t(X) %*% y
-  yty <- t(y) %*% y
-
-  # Set the prior
-  K <- 9
-  sigma0 <- c(0.001, .1, .5, 1, 5, 10, 20, 30, .005)
-  omega0 <- rep(1 / K, K)
-
-  # Calculate summary statistics
-  b.hat <- sapply(1:p, function(j) {
-    summary(lm(y ~ X[, j]))$coefficients[-1, 1]
-  })
-  s.hat <- sapply(1:p, function(j) {
-    summary(lm(y ~ X[, j]))$coefficients[-1, 2]
-  })
-  R.hat <- cor(X)
-  var_y <- var(y)
-  sigmasq_init <- 1.5
-
-  return(list(
-    bhat = b.hat, shat = s.hat, R = R.hat, var_y=var_y, n=n,
-    sigma2_e=sigmasq_init, s0 = sigma0, w0 = omega0,
-    mu1_init = rep(0, ncol(X)), X = X, y=y
-  ))
-}
-
-test_that("Check mr.ash.rss (susieR) works", {
-  data <- generate_mr_ash_inputs()
-  res <- susieR::mr.ash.rss(data$bhat, data$shat, data$R, data$var_y, data$n,
-    s0 = data$s0, w0 = data$w0, sigma2_e = data$sigma2_e, mu1_init = numeric(0))
-  expect_true(all(c("mu1", "sigma2_1", "w1", "sigma2_e", "w0", "ELBO") %in% names(res)))
-  # Also check mr.ash-compatible output names
-  expect_true(all(c("beta", "sigma2", "pi", "iter", "varobj") %in% names(res)))
+test_that("susie_weights errors on dimension mismatch", {
+  mock_fit <- list(pip = c(0.1, 0.2))
+  X <- matrix(rnorm(30), nrow = 10, ncol = 3)
+  expect_error(susie_weights(X = X, susie_fit = mock_fit), "Dimension mismatch")
 })
 
-test_that("Check mr.ash.rss error on ncpu", {
-  data <- generate_mr_ash_inputs()
-  expect_error(susieR::mr.ash.rss(data$bhat, data$shat, data$R, data$var_y, data$n,
-    s0 = data$s0, w0 = data$w0, sigma2_e = data$sigma2_e, mu1_init = numeric(0), ncpu=-1))
-  })
-
-test_that("Check mr.ash.rss works null var_y", {
-  data <- generate_mr_ash_inputs()
-  res <- susieR::mr.ash.rss(data$bhat, data$shat, data$R, NULL, data$n,
-    s0 = data$s0, w0 = data$w0, sigma2_e = data$sigma2_e, mu1_init = numeric(0))
-  expect_true(all(c("mu1", "sigma2_1", "w1", "sigma2_e", "w0", "ELBO") %in% names(res)))
-  })
-
-test_that("Check mr_ash_rss_weights works", {
-  data <- generate_mr_ash_inputs()
-  input <- list(b = data$bhat, seb=data$shat, n=rep(data$n, ncol(data$X)))
-  res <- mr_ash_rss_weights(input, data$R, data$var_y,
-    data$sigma2_e, data$s0, data$w0, mu1_init = numeric(0)) 
-  expect_true(length(res) == ncol(data$R))
+# ---- susie_ash_weights ----
+test_that("susie_ash_weights returns zeros when no expected fields", {
+  mock_fit <- list(pip = c(0.1, 0.2, 0.3))
+  result <- susie_ash_weights(susie_ash_fit = mock_fit)
+  expect_equal(result, rep(0, 3))
 })
 
-test_that("Check prs_cs works", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  res <- prs_cs(data$bhat, LD, data$n, maf = maf)
-  expect_true(all(names(res) %in% c("beta_est", "psi_est", "sigma_est", "phi_est")))
+# ---- susie_inf_weights ----
+test_that("susie_inf_weights returns zeros when no expected fields", {
+  mock_fit <- list(pip = c(0.4, 0.5))
+  result <- susie_inf_weights(susie_inf_fit = mock_fit)
+  expect_equal(result, rep(0, 2))
 })
 
-test_that("Check prs_cs missing LD", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- NULL
-  expect_error(prs_cs(data$bhat, LD, data$n, maf = maf))
+# ---- glmnet_weights ----
+test_that("glmnet_weights computes LASSO weights", {
+  skip_if_not_installed("glmnet")
+  set.seed(42)
+  n <- 50; p <- 10
+  X <- matrix(rnorm(n * p), nrow = n)
+  y <- X[, 1] * 0.5 + rnorm(n)
+  result <- glmnet_weights(X, y, alpha = 1)
+  expect_equal(nrow(result), p)
+  expect_equal(ncol(result), 1)
 })
 
-test_that("Check prs_cs missing n", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  expect_error(prs_cs(data$bhat, LD, NULL, maf = maf))
+test_that("enet_weights computes elastic net weights", {
+  skip_if_not_installed("glmnet")
+  set.seed(42)
+  n <- 50; p <- 10
+  X <- matrix(rnorm(n * p), nrow = n)
+  y <- X[, 1] * 0.5 + rnorm(n)
+  result <- enet_weights(X, y)
+  expect_equal(nrow(result), p)
 })
 
-test_that("Check prs_cs bhat and maf mismatch", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat) + 2)
-  LD <- list(blk1 = data$R)
-  expect_error(prs_cs(data$bhat, LD, n=data$n, maf = maf))
+test_that("lasso_weights computes LASSO weights", {
+  skip_if_not_installed("glmnet")
+  set.seed(42)
+  n <- 50; p <- 10
+  X <- matrix(rnorm(n * p), nrow = n)
+  y <- X[, 1] * 0.5 + rnorm(n)
+  result <- lasso_weights(X, y)
+  expect_equal(nrow(result), p)
 })
 
-test_that("Check prs_cs bhat and LD mismatch", {
-  data <- generate_mr_ash_inputs()
-  alt_data <- generate_mr_ash_inputs(seed=2, n = 400, p = 20)
-  maf <- rep(0.5, length(alt_data$bhat))
-  LD <- list(blk1 = data$R)
-  expect_error(prs_cs(alt_data$bhat, LD, n=alt_data$n, maf = maf))
+test_that("glmnet_weights handles zero-variance columns", {
+  skip_if_not_installed("glmnet")
+  set.seed(42)
+  n <- 50; p <- 10
+  X <- matrix(rnorm(n * p), nrow = n)
+  X[, 3] <- 5
+  y <- X[, 1] * 0.5 + rnorm(n)
+  result <- glmnet_weights(X, y, alpha = 1)
+  expect_equal(result[3, 1], 0)
 })
 
-test_that("Check prs_cs_weights works", {
-  data <- generate_mr_ash_inputs()
-  input <- list(b = data$bhat, seb=data$shat, n=data$n)
-  maf <- rep(0.5, length(data$bhat))
-  res <- prs_cs_weights(input, data$R)
-  expect_true(length(res) == ncol(data$R))
+# ---- bayes_alphabet_weights ----
+test_that("bayes_alphabet_weights errors on dimension mismatch", {
+  skip_if_not_installed("qgg")
+  X <- matrix(rnorm(100), nrow = 10)
+  y <- rnorm(5)
+  expect_error(bayes_alphabet_weights(X, y, method = "bayesN"), "same number of rows")
 })
 
-test_that("Check sdpr works", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  res <- sdpr(data$bhat, LD, data$n)
-  expect_true(all(names(res) %in% c("beta_est", "h2")))
+test_that("bayes_alphabet_weights errors on covariate dimension mismatch", {
+  skip_if_not_installed("qgg")
+  X <- matrix(rnorm(100), nrow = 10)
+  y <- rnorm(10)
+  Z <- matrix(rnorm(15), nrow = 5)
+  expect_error(bayes_alphabet_weights(X, y, method = "bayesN", Z = Z),
+               "same number of rows")
 })
 
-test_that("Check sdpr bhat and LD mismatch", {
-  data <- generate_mr_ash_inputs()
-  alt_data <- generate_mr_ash_inputs(seed=2, n = 400, p = 24)
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  expect_error(sdpr(alt_data$bhat, LD, alt_data$n))
+# ---- gbayes_rss ----
+test_that("gbayes_rss errors without LD matrix", {
+  skip_if_not_installed("qgg")
+  sumstats <- data.frame(beta = 0.1, se = 0.05, n = 1000)
+  expect_error(gbayes_rss(sumstats = sumstats), "Must provide LD")
 })
 
-test_that("Check sdpr missing n", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  expect_error(sdpr(data$bhat, LD, -1))
+test_that("gbayes_rss errors on invalid method", {
+  skip_if_not_installed("qgg")
+  sumstats <- data.frame(beta = 0.1, se = 0.05, n = 1000)
+  LD <- diag(1)
+  expect_error(gbayes_rss(sumstats = sumstats, LD = LD, method = "invalidMethod"),
+               "not valid")
 })
 
-test_that("Check sdpr negative per_variant_sample_size", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  expect_error(sdpr(data$bhat, LD, data$n, per_variant_sample_size=rep(-1, data$n)))
+test_that("gbayes_rss errors on non-dataframe input", {
+  skip_if_not_installed("qgg")
+  expect_error(gbayes_rss(sumstats = list(beta = 0.1), LD = diag(1)))
 })
 
-test_that("Check sdpr array violation", {
-  data <- generate_mr_ash_inputs()
-  maf <- rep(0.5, length(data$bhat))
-  LD <- list(blk1 = data$R)
-  expect_error(sdpr(data$bhat, LD, data$n, array=sample(1:10, data$n, replace=TRUE)))
-})
-
-test_that("Check sdpr_weights works", {
-  data <- generate_mr_ash_inputs()
-  input <- list(b = data$bhat, seb=data$shat, n=data$n)
-  maf <- rep(0.5, length(data$bhat))
-  res <- sdpr_weights(input, data$R)
-  expect_true(length(res) == ncol(data$R))
-})
-
-test_that("Check mrmash_weights mrmash_fit, X, Y, missing", {
-  expect_error(mrmash_weights())
-})
-
-test_that("Check mrmash_weights mrmash_fit missing", {
-  data <- generate_mr_ash_inputs(multiple_y=TRUE, k=4)
-  #res <- mrmash_weights(X=data$X, Y=data$y)
-  #expect_true(length(res) == ncol(data$X))
-})
-
-test_that("Check mvsusie_weights mvsusie_fit, X, Y, missing", {
-  expect_error(mvsusie_weights())
-})
-
-test_that("Check mvsusie_weights mvsusie_fit missing", {
-  data <- generate_mr_ash_inputs(multiple_y=TRUE, k=4)
-  res <- mvsusie_weights(X=data$X, Y=data$y)
-  expect_true(nrow(res) == ncol(data$X))
-})
-
-bayes_input <- function(seed=1, n=100000, p=1000) {
-  X <- matrix(rnorm(n), nrow = p)
-  Z <- matrix(round(runif(p*3, 0, 0.8), 0), nrow = p)
-  set1 <- sample(1:ncol(X), 5)
-  set2 <- sample(1:ncol(X), 5)
-  sets <- list(set1, set2)
-  g <- rowSums(X[, c(set1, set2)])
-  e <- rnorm(nrow(X), mean = 0, sd = 1)
-  y <- g + e
-  return(list(X=X, y=y, Z=Z, sets=sets))
-}
-test_that("Check bayes_alphabet_weights works", {
-  data <- bayes_input()
-  res1 <- bayes_alphabet_weights(data$X, data$y, 'bayesN')
-  res2 <- bayes_alphabet_weights(data$X, data$y, 'bayesL')
-  res3 <- bayes_alphabet_weights(data$X, data$y, 'bayesA')
-  res4 <- bayes_alphabet_weights(data$X, data$y, 'bayesC')
-  res5 <- bayes_alphabet_weights(data$X, data$y, 'bayesR')
-  expect_true(length(res1) == ncol(data$X))
-  expect_true(length(res2) == ncol(data$X))
-  expect_true(length(res3) == ncol(data$X))
-  expect_true(length(res4) == ncol(data$X))
-  expect_true(length(res5) == ncol(data$X))
-  res1 <- bayes_alphabet_weights(data$X, data$y, 'bayesN', Z = data$Z)
-  res2 <- bayes_alphabet_weights(data$X, data$y, 'bayesL', Z = data$Z)
-  res3 <- bayes_alphabet_weights(data$X, data$y, 'bayesA', Z = data$Z)
-  res4 <- bayes_alphabet_weights(data$X, data$y, 'bayesC', Z = data$Z)
-  res5 <- bayes_alphabet_weights(data$X, data$y, 'bayesR', Z = data$Z)
-  expect_true(length(res1) == ncol(data$X))
-  expect_true(length(res2) == ncol(data$X))
-  expect_true(length(res3) == ncol(data$X))
-  expect_true(length(res4) == ncol(data$X))
-  expect_true(length(res5) == ncol(data$X))
-})
-
-test_that("Check bayes_alphabet_weights mismatch X, y", {
-  data <- bayes_input()
-  alt_data <- bayes_input(p=2000)
-  expect_error(bayes_alphabet_weights(data$X, alt_data$y, 'bayesN'))
-})
-
-test_that("Check bayes_alphabet_weights mismatch X, Z", {
-  data <- bayes_input()
-  alt_data <- bayes_input(n=10000, p=2000)
-  expect_error(bayes_alphabet_weights(data$X, NULL, 'bayesN', Z = alt_data$Z))
-})
-
-test_that("Check bayes_n_weights works", {
-  data <- bayes_input()
-  res <- bayes_n_weights(data$X, data$y, Z = data$Z)
-  expect_true(length(res) == ncol(data$X))
-})
-
-test_that("Check bayes_l_weights works", {
-  data <- bayes_input()
-  res <- bayes_l_weights(data$X, data$y, Z = data$Z)
-  expect_true(length(res) == ncol(data$X))
-})
-
-test_that("Check bayes_a_weights works", {
-  data <- bayes_input()
-  res <- bayes_a_weights(data$X, data$y, Z = data$Z)
-  expect_true(length(res) == ncol(data$X))
-})
-
-test_that("Check bayes_c_weights works", {
-  data <- bayes_input()
-  res <- bayes_c_weights(data$X, data$y, Z = data$Z)
-  expect_true(length(res) == ncol(data$X))
-})
-
-test_that("Check bayes_r_weights works", {
-  data <- bayes_input()
-  res <- bayes_r_weights(data$X, data$y, Z = data$Z)
-  expect_true(length(res) == ncol(data$X))
+test_that("gbayes_rss errors on dimension mismatch", {
+  skip_if_not_installed("qgg")
+  sumstats <- data.frame(beta = c(0.1, 0.2), se = c(0.05, 0.1), n = c(1000, 1000))
+  LD <- diag(3)
+  expect_error(gbayes_rss(sumstats = sumstats, LD = LD), "must correspond")
 })

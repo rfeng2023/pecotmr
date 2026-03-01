@@ -142,30 +142,29 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 #' @param L Initial number of causal configurations to consider.
 #' @param max_L Maximum number of causal configurations to consider.
 #' @param l_step Step size for increasing L when the limit is reached.
-#' @param zR_discrepancy_correction Logical indicating if z-score and R matrix discrepancy correction should be performed.
 #' @param ... Extra parameters to pass to the susie_rss function.
 #' @return SuSiE RSS fit object after dynamic L adjustment
 #' @importFrom susieR susie_rss
 #' @export
 susie_rss_wrapper <- function(z, R, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
-                              zR_discrepancy_correction = FALSE, coverage = 0.95, ...) {
+                              coverage = 0.95, ...) {
   if (L == 1) {
     return(susie_rss(
       z = z, R = R, var_y = var_y, n = n,
-      L = 1, max_iter = 1, correct_zR_discrepancy = FALSE, coverage = coverage, ...
+      L = 1, max_iter = 1, coverage = coverage, ...
     ))
   }
   if (L == max_L) {
     return(susie_rss(
       z = z, R = R, var_y = var_y, n = n, L = L,
-      correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...
+      coverage = coverage, ...
     ))
   }
   while (TRUE) {
     st <- proc.time()
     susie_rss_result <- susie_rss(
       z = z, R = R, var_y = var_y, n = n, L = L,
-      correct_zR_discrepancy = zR_discrepancy_correction, coverage = coverage, ...
+      coverage = coverage, ...
     )
     susie_rss_result$time_elapsed <- proc.time() - st
     # Check for convergence and adjust L if necessary

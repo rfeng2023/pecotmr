@@ -12,7 +12,6 @@ susie_rss_wrapper(
   L = 10,
   max_L = 30,
   l_step = 5,
-  zR_discrepancy_correction = FALSE,
   coverage = 0.95,
   ...
 )
@@ -31,8 +30,6 @@ susie_rss_wrapper(
 \item{max_L}{Maximum number of causal configurations to consider.}
 
 \item{l_step}{Step size for increasing L when the limit is reached.}
-
-\item{zR_discrepancy_correction}{Logical indicating if z-score and R matrix discrepancy correction should be performed.}
 
 \item{...}{Extra parameters to pass to the susie_rss function.}
 }

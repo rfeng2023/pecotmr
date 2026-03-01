@@ -234,7 +234,7 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
   phenotype_data <- compact(map2(phenotype_path, extract_region_name, ~ {
     tabix_data <- if (!is.null(region)) tabix_region(.x, region, tabix_header = tabix_header) else read_delim(.x, "\t", col_types = cols())
     if (nrow(tabix_data) == 0) {
-      message(paste("Phenotype file ", .x, " is empty for the specified region", if (!is.null(region)) "" else region))
+      message(paste("Phenotype file ", .x, " is empty for the specified region", if (is.null(region)) "" else region))
       return(NULL)
     }
     if (!is.null(.y) && is.vector(.y) && !is.null(region_name_col) && (region_name_col %% 1 == 0)) {

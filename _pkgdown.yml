@@ -54,8 +54,8 @@ articles:
       Detailed tutorials for colocalization, multivariate analysis,
       and GWAS-QTL integration pipelines.
     contents:
-    - ColocBoost_Wrapper_Pipeline
-    - mrmash-intro
+    - colocboost-pipeline
+    - multicontext-twas-weights
   - title: "Quality Control"
     desc: >
       Tools for summary statistics quality control.
@@ -63,7 +63,7 @@ articles:
     - dentist
   - title: "Enrichment Analysis"
     contents:
-    - xqtl_enrichment
+    - xqtl-enrichment
   - title: "Resources"
     navbar: ~
     contents:
