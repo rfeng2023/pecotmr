@@ -39,4 +39,3 @@ r44 = {features = ["r44"]}
 "r-covr" = "*"
 "r-pkgdown" = "*"
 "r-tidyverse" = "*"
-"r-r.utils" = "*"

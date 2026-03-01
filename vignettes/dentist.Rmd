@@ -26,7 +26,7 @@ We also demonstrate how the alternative **SLALOM + RAISS** pipeline achieves com
 
 ```{r load-packages}
 library(pecotmr)
-library(data.table)
+library(vroom)
 ```
 
 ## Toy Data
@@ -49,15 +49,15 @@ bfile <- file.path(extdata_dir, "toy_ref")
 sumstat_gz <- file.path(extdata_dir, "toy_summary.txt.gz")
 
 # Load summary statistics (DENTIST format: SNP A1 A2 freq beta se p N)
-sumstat <- fread(sumstat_gz)
+sumstat <- as.data.frame(vroom(sumstat_gz, show_col_types = FALSE))
 cat(sprintf("Full dataset: %d variants\n", nrow(sumstat)))
 head(sumstat, 3)
 ```
 
 ```{r subset-data}
 # Load reference panel variant info
-bim <- fread(paste0(bfile, ".bim"), header = FALSE,
-             col.names = c("chrom", "variant_id", "gd", "pos", "A1", "A2"))
+bim <- as.data.frame(vroom(paste0(bfile, ".bim"), col_names = c("chrom", "variant_id", "gd", "pos", "A1", "A2"),
+                           show_col_types = FALSE))
 
 # Select ~500 variants from a contiguous region for fast execution
 region_start <- bim$pos[1]
@@ -75,29 +75,20 @@ cat(sprintf("Selected %d variants in %.1f Mb region (pos %s - %s)\n",
 The `dentist_from_files()` function mirrors the interface of the DENTIST C++ binary. It takes a summary statistics file path and a PLINK bfile prefix, then internally handles allele alignment, LD computation, and windowed imputation.
 
 ```{r file-based-subset}
-# Create temporary subset files for the demo
-snp_file <- tempfile(fileext = ".txt")
-writeLines(region_snps, snp_file)
-
-sub_bfile <- tempfile()
-sub_sumstat <- tempfile(fileext = ".txt")
-
-# Subset PLINK files
-system(sprintf("plink --bfile %s --extract %s --make-bed --out %s 2>/dev/null",
-               bfile, snp_file, sub_bfile))
-
-# Subset summary statistics
+# Subset summary statistics to the selected region (in R, no plink needed)
 sumstat_sub <- sumstat[sumstat$SNP %in% region_snps, ]
-fwrite(sumstat_sub, sub_sumstat, sep = "\t", quote = FALSE)
+sub_sumstat <- tempfile(fileext = ".txt")
+readr::write_tsv(sumstat_sub, sub_sumstat)
 cat(sprintf("Subset: %d variants in summary stats\n", nrow(sumstat_sub)))
 ```
 
 ```{r run-dentist-files}
 # Run DENTIST via file-based interface
+# dentist_from_files() handles matching between summary stats and bfile internally
 # nSample = NULL auto-detects reference panel size from .fam file
 result_files <- dentist_from_files(
   gwas_summary = sub_sumstat,
-  bfile        = sub_bfile,
+  bfile        = bfile,
   nSample      = NULL,
   window_size  = 2000000,
   nIter        = 8,
@@ -136,16 +127,16 @@ For pipeline integration, `dentist_single_window()` accepts z-scores and an LD m
 # This ensures allele QC has already been applied
 aligned_sumstat <- result_files$sum_stat
 LD_mat <- result_files$LD_mat
-n_samples <- nrow(fread(paste0(sub_bfile, ".fam"), header = FALSE))
+n_samples <- nrow(vroom(paste0(bfile, ".fam"), col_names = FALSE, show_col_types = FALSE))
 
 z_scores <- aligned_sumstat$z
 n_snps <- length(z_scores)
 cat(sprintf("Aligned data: %d variants, %d reference samples\n", n_snps, n_samples))
 
 # Build a position-sorted variant info data frame for RAISS
-bim_sub <- fread(paste0(sub_bfile, ".bim"), header = FALSE,
-                 col.names = c("chrom", "variant_id", "gd", "pos", "A1", "A2"))
-bim_aligned <- bim_sub[match(aligned_sumstat$SNP, bim_sub$variant_id), ]
+bim_full <- as.data.frame(vroom(paste0(bfile, ".bim"), col_names = c("chrom", "variant_id", "gd", "pos", "A1", "A2"),
+                              show_col_types = FALSE))
+bim_aligned <- bim_full[match(aligned_sumstat$SNP, bim_full$variant_id), ]
 
 # Sort everything by position (required by RAISS)
 pos_order <- order(bim_aligned$pos)

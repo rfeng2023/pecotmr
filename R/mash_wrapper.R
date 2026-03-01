@@ -505,7 +505,6 @@ merge_susie_cs <- function(susie_fit, coverage = "cs_coverage_0.95", complementa
   return(combined_top_loci_df)
 }
 
-#' @importFrom data.table as.data.table setnames
 #' @export
 load_multitrait_R_sumstat <- function(susie_fit, sumstats_db, coverage = NULL, extract_inf = "z", top_loci = FALSE, filter_file = NULL, exclude_condition = NULL, ld_meta_file = NULL, remove_any_missing = TRUE, max_rows_selected = 300, nan_remove = FALSE, condition_filter = FALSE) {
   # Internal recursive filtering function

@@ -670,3 +670,104 @@ rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))
 #test_that("Test load_regional_multivariate_data",{
 #  set.seed(1)
 #})
+
+# ---- Unit tests for vroom-based file loaders ----
+
+test_that("read_pvar handles multiple comment styles", {
+  # Test with ## metadata lines (standard VCF/pvar format)
+  pvar_path <- tempfile(fileext = ".pvar")
+  cat("##fileformat=VCFv4.2\n", file = pvar_path)
+  cat("##INFO=<ID=AF>\n", file = pvar_path, append = TRUE)
+  cat("#CHROM\tID\tPOS\tREF\tALT\n", file = pvar_path, append = TRUE)
+  cat("1\trs10\t1000\tA\tG\n", file = pvar_path, append = TRUE)
+  cat("1\trs20\t2000\tT\tC\n", file = pvar_path, append = TRUE)
+
+  res <- read_pvar(pvar_path)
+  expect_equal(nrow(res), 2)
+  expect_equal(colnames(res), c("chrom", "id", "pos", "alt", "ref"))
+  expect_equal(res$id, c("rs10", "rs20"))
+  expect_equal(res$pos, c(1000, 2000))
+  file.remove(pvar_path)
+})
+
+test_that("read_pvar errors when #CHROM header is missing", {
+  bad_path <- tempfile(fileext = ".pvar")
+  cat("col1\tcol2\tcol3\n", file = bad_path)
+  cat("1\t2\t3\n", file = bad_path, append = TRUE)
+  expect_error(read_pvar(bad_path), "Could not find #CHROM header")
+  file.remove(bad_path)
+})
+
+test_that("read_bim returns correct columns and types", {
+  # Create a minimal bim file
+  bim_path <- tempfile(fileext = ".bim")
+  cat("22\trs100\t0\t50000\tA\tG\n", file = bim_path)
+  cat("22\trs200\t0\t60000\tT\tC\n", file = bim_path, append = TRUE)
+  cat("22\trs300\t0\t70000\tC\tA\n", file = bim_path, append = TRUE)
+
+  # read_bim expects a .bed path and derives .bim from it
+  bed_path <- sub("\\.bim$", ".bed", bim_path)
+  file.copy(bim_path, bim_path)  # ensure bim exists at expected path
+  res <- read_bim(bed_path)
+  expect_equal(nrow(res), 3)
+  expect_equal(colnames(res), c("chrom", "id", "gpos", "pos", "a1", "a0"))
+  expect_equal(res$id, c("rs100", "rs200", "rs300"))
+  expect_equal(res$pos, c(50000, 60000, 70000))
+  file.remove(bim_path)
+})
+
+test_that("load_tsv_region reads plain tsv file", {
+  tsv_path <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1", "chr1", "chr2"),
+    pos = c(100, 200, 300),
+    value = c(1.1, 2.2, 3.3),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tsv_path)
+
+  res <- suppressWarnings(load_tsv_region(tsv_path))
+  expect_equal(nrow(res), 3)
+  expect_equal(colnames(res), c("chrom", "pos", "value"))
+  expect_equal(res$pos, c(100, 200, 300))
+  file.remove(tsv_path)
+})
+
+test_that("load_tsv_region reads plain file with region_name filter", {
+  tsv_path <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1", "chr1", "chr2"),
+    gene = c("BRCA1", "TP53", "BRCA1"),
+    value = c(1.1, 2.2, 3.3),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tsv_path)
+
+  res <- suppressWarnings(load_tsv_region(tsv_path,
+    extract_region_name = "BRCA1", region_name_col = 2))
+  expect_equal(nrow(res), 2)
+  expect_equal(res$gene, c("BRCA1", "BRCA1"))
+  file.remove(tsv_path)
+})
+
+test_that("load_tsv_region reads gz file without region", {
+  tsv_path <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1", "chr1", "chr2"),
+    pos = c(100, 200, 300),
+    value = c(1.1, 2.2, 3.3),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tsv_path)
+
+  # Compress with gzip
+  gz_path <- paste0(tsv_path, ".gz")
+  con <- gzfile(gz_path, "w")
+  writeLines(readLines(tsv_path), con)
+  close(con)
+
+  res <- load_tsv_region(gz_path)
+  expect_equal(nrow(res), 3)
+  expect_equal(colnames(res), c("chrom", "pos", "value"))
+  file.remove(tsv_path, gz_path)
+})

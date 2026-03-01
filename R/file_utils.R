@@ -1,10 +1,14 @@
 # read PLINK files
 #' @importFrom dplyr rename
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom tools file_path_sans_ext
 read_pvar <- function(pgen) {
   pvarf <- paste0(file_path_sans_ext(pgen), ".pvar")
-  pvardt <- fread(pvarf, skip = "#CHROM")
+  # Find the #CHROM header line (skip metadata/comment lines above it)
+  header_lines <- readLines(pvarf, n = 500)
+  header_idx <- grep("^#CHROM", header_lines)[1]
+  if (is.na(header_idx)) stop("Could not find #CHROM header in ", pvarf)
+  pvardt <- as.data.frame(vroom(pvarf, delim = "\t", skip = header_idx - 1, show_col_types = FALSE))
   pvardt <- rename(pvardt,
     "chrom" = "#CHROM", "pos" = "POS",
     "alt" = "ALT", "ref" = "REF", "id" = "ID"
@@ -72,7 +76,7 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
   )
 }
 
-#' @importFrom data.table fread
+#' @importFrom vroom vroom
 #' @importFrom dplyr as_tibble mutate filter
 #' @importFrom tibble tibble
 #' @importFrom magrittr %>%
@@ -81,7 +85,9 @@ read_pgen <- function(pgen, variantidx = NULL, meanimpute = F) {
 tabix_region <- function(file, region, tabix_header = "auto", target = "", target_column_index = "") {
   cmd_output <- tryCatch(
     {
-      fread(cmd = paste0("tabix -h ", file, " ", region), sep = "auto", header = tabix_header)
+      use_col_names <- if (identical(tabix_header, FALSE)) FALSE else TRUE
+      as.data.frame(vroom(pipe(paste0("tabix -h ", file, " ", region)),
+                          delim = "\t", col_names = use_col_names, show_col_types = FALSE))
     },
     error = function(e) NULL
   )
@@ -1112,7 +1118,6 @@ load_multitask_regional_data <- function(region, # a string of chr:start-end for
 #'
 #' @return A dataframe containing the filtered summary statistics.
 #'
-#' @importFrom data.table fread
 #' @importFrom vroom vroom
 #' @export
 load_tsv_region <- function(file_path, region = NULL, extract_region_name = NULL, region_name_col = NULL) {
@@ -1141,13 +1146,17 @@ load_tsv_region <- function(file_path, region = NULL, extract_region_name = NULL
         # Only region specified, no filter
         cmd <- paste0("zcat ", file_path, " | head -1 && tabix ", file_path, " ", region)
       } else {
-        # Neither region nor filter specified
-        cmd <- file_path
+        # Neither region nor filter specified - read gz directly
+        cmd <- NULL
       }
 
       sumstats <- tryCatch(
         {
-          fread(cmd)
+          if (is.null(cmd)) {
+            as.data.frame(vroom(file_path, show_col_types = FALSE))
+          } else {
+            as.data.frame(vroom(pipe(cmd), delim = "\t", show_col_types = FALSE))
+          }
         },
         error = function(e) {
           stop("Data read error. Please make sure this gz file is tabix-indexed and the specified filter column exists.")
@@ -1156,7 +1165,7 @@ load_tsv_region <- function(file_path, region = NULL, extract_region_name = NULL
     }
   } else {
     warning("Not a tabix-indexed gz file, loading the entire dataset.")
-    sumstats <- vroom(file_path)
+    sumstats <- as.data.frame(vroom(file_path, show_col_types = FALSE))
     # Apply filter if specified
     if (!is.null(extract_region_name) && !is.null(region_name_col)) {
       keep_index <- which(str_detect(sumstats[[region_name_col]], extract_region_name))

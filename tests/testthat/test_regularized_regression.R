@@ -156,20 +156,22 @@ generate_mr_ash_inputs <- function(seed=1, n = 360, p = 16, multiple_y=FALSE, k=
 test_that("Check mr.ash.rss (susieR) works", {
   data <- generate_mr_ash_inputs()
   res <- susieR::mr.ash.rss(data$bhat, data$shat, data$R, data$var_y, data$n,
-    data$sigma2_e, data$s0, data$w0, mu1_init = numeric(0))
+    s0 = data$s0, w0 = data$w0, sigma2_e = data$sigma2_e, mu1_init = numeric(0))
   expect_true(all(c("mu1", "sigma2_1", "w1", "sigma2_e", "w0", "ELBO") %in% names(res)))
+  # Also check mr.ash-compatible output names
+  expect_true(all(c("beta", "sigma2", "pi", "iter", "varobj") %in% names(res)))
 })
 
 test_that("Check mr.ash.rss error on ncpu", {
   data <- generate_mr_ash_inputs()
   expect_error(susieR::mr.ash.rss(data$bhat, data$shat, data$R, data$var_y, data$n,
-    data$sigma2_e, data$s0, data$w0, mu1_init = numeric(0), ncpu=-1))
+    s0 = data$s0, w0 = data$w0, sigma2_e = data$sigma2_e, mu1_init = numeric(0), ncpu=-1))
   })
 
 test_that("Check mr.ash.rss works null var_y", {
   data <- generate_mr_ash_inputs()
   res <- susieR::mr.ash.rss(data$bhat, data$shat, data$R, NULL, data$n,
-    data$sigma2_e, data$s0, data$w0, mu1_init = numeric(0))
+    s0 = data$s0, w0 = data$w0, sigma2_e = data$sigma2_e, mu1_init = numeric(0))
   expect_true(all(c("mu1", "sigma2_1", "w1", "sigma2_e", "w0", "ELBO") %in% names(res)))
   })
 

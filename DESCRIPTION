@@ -19,7 +19,6 @@ Imports:
     bigsnpr,
     bigstatsr,
     coloc,
-    data.table,
     doFuture,
     dplyr,
     furrr,
@@ -38,7 +37,6 @@ Imports:
 Suggests:
     coda,
     GBJ,
-    R.utils,
     Rfast,
     flashier,
     fsusieR,

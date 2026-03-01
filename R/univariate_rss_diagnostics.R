@@ -162,10 +162,10 @@ extract_top_pip_info <- function(con_data) {
 #' into multiple columns, preserving the original order of correlations. It also
 #' calculates maximum and minimum correlation values for each Credible Set.
 #'
-#' @param df Data frame or data.table. The output from `extract_cs_info()` function,
+#' @param df Data frame. The output from `extract_cs_info()` function,
 #'           containing a `cs_corr` column with correlation information.
 #'
-#' @return A data.table with the original columns from the input, plus:
+#' @return A data frame with the original columns from the input, plus:
 #'   \item{cs_corr_1, cs_corr_2, ...}{Individual correlation values, with column names
 #'         based on their position in the original string}
 #'   \item{cs_corr_max}{Maximum absolute correlation value (excluding 1)}
@@ -177,30 +177,26 @@ extract_top_pip_info <- function(con_data) {
 #' these correlations, allowing for easy interpretation in a matrix-like format.
 #'
 #' @note
-#' - This function converts the input to a data.table if it isn't already one.
+#' - This function converts the input to a data frame if it isn't already one.
 #' - It handles cases where correlation values might be missing or not in the expected format.
 #' - The function assumes that correlation values of 1 represent self-correlations and excludes
 #'   these when calculating max and min correlations.
 #'
-#' @importFrom data.table setDT
-#'
 #' @export
 parse_cs_corr <- function(df) {
-  # Convert to data.table if not already
-  if (!is.data.table(df)) {
-    setDT(df)
-  }
-  
+  # Ensure we work with a data frame
+  df <- as.data.frame(df)
+
   extract_correlations <- function(x) {
     # Early return if x is invalid
     if(is.na(x) || x == "" || is.null(x) || !grepl(",", as.character(x))) {
       return(list(values = numeric(0), max_corr = NA_real_, min_corr = NA_real_))
     }
-    
+
     # Convert and filter values
     values <- as.numeric(unlist(strsplit(x, ",")))
     values_filtered <- abs(values[values != 1])
-    
+
     # Return list with NA if no valid correlations
     list(
       values = values,
@@ -212,28 +208,27 @@ parse_cs_corr <- function(df) {
   processed_results <- lapply(df$cs_corr, extract_correlations)
   # If no valid results, add NA columns and return
   if(all(sapply(processed_results, function(x) length(x$values) == 0))) {
-    df[, c("cs_corr_max", "cs_corr_min") := list(NA_real_, NA_real_)]
+    df$cs_corr_max <- NA_real_
+    df$cs_corr_min <- NA_real_
     return(df)
   }
 
   # Determine max number of correlations
   max_corr_count <- max(sapply(processed_results, function(x) length(x$values)))
-  
+
   # Create and add correlation columns
   col_names <- paste0("cs_corr_", 1:max_corr_count)
-  
+
   for(i in seq_along(col_names)) {
-    df[, (col_names[i]) := sapply(processed_results, function(x) {
+    df[[col_names[i]]] <- sapply(processed_results, function(x) {
       if(length(x$values) >= i) x$values[i] else NA_real_
-    })]
+    })
   }
-  
+
   # Add max and min correlation columns
-  df[, `:=`(
-    cs_corr_max = sapply(processed_results, `[[`, "max_corr"),
-    cs_corr_min = sapply(processed_results, `[[`, "min_corr")
-  )]
-  
+  df$cs_corr_max <- sapply(processed_results, `[[`, "max_corr")
+  df$cs_corr_min <- sapply(processed_results, `[[`, "min_corr")
+
   return(df)
 }
 

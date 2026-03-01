@@ -7,11 +7,11 @@
 parse_cs_corr(df)
 }
 \arguments{
-\item{df}{Data frame or data.table. The output from `extract_cs_info()` function,
+\item{df}{Data frame. The output from `extract_cs_info()` function,
 containing a `cs_corr` column with correlation information.}
 }
 \value{
-A data.table with the original columns from the input, plus:
+A data frame with the original columns from the input, plus:
   \item{cs_corr_1, cs_corr_2, ...}{Individual correlation values, with column names
         based on their position in the original string}
   \item{cs_corr_max}{Maximum absolute correlation value (excluding 1)}
@@ -28,7 +28,7 @@ values separated by '|', into individual columns. It preserves the order of
 these correlations, allowing for easy interpretation in a matrix-like format.
 }
 \note{
-- This function converts the input to a data.table if it isn't already one.
+- This function converts the input to a data frame if it isn't already one.
 - It handles cases where correlation values might be missing or not in the expected format.
 - The function assumes that correlation values of 1 represent self-correlations and excludes
   these when calculating max and min correlations.

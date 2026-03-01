@@ -1,7 +1,6 @@
 context("encoloc")
 library(tidyverse)
 library(coloc)
-library(data.table)
 
 generate_mock_ld_files <- function(seed = 1, num_blocks = 5) {
     data(coloc_test_data)

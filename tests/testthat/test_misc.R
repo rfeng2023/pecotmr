@@ -1,6 +1,5 @@
 context("misc")
 library(tidyverse)
-library(data.table)
 
 test_that("Test compute_maf freq 0.5",{
     expect_equal(compute_maf(rep(1, 20)), 0.5)
