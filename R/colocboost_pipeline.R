@@ -155,6 +155,9 @@ colocboost_analysis_pipeline <- function(region_data,
     return(phenotypes)
   }
 
+  ####### ========= resolve defaults ======== #######
+  qc_method <- match.arg(qc_method)
+
   ####### ========= initial output results before QC ======== #######
   analysis_results <- list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL)
   analysis_results$computing_time <- list("QC" = NULL, "Analysis" = list("xqtl_coloc" = NULL, "joint_gwas" = NULL, "separate_gwas" = NULL))
@@ -378,6 +381,32 @@ qc_regional_data <- function(region_data,
                              qc_method = c("dentist", "slalom"),
                              impute = TRUE,
                              impute_opts = list(rcond = 0.01, R2_threshold = 0.6, minimum_ld = 5, lamb = 0.01)) {
+  qc_method <- match.arg(qc_method)
+
+  # Validate and recycle pip_cutoff_to_skip_ind: scalar → recycled to n_contexts
+  if (!is.null(region_data$individual_data)) {
+    n_ind_contexts <- length(region_data$individual_data$residual_Y)
+    if (length(pip_cutoff_to_skip_ind) == 1) {
+      pip_cutoff_to_skip_ind <- rep(pip_cutoff_to_skip_ind, n_ind_contexts)
+    } else if (length(pip_cutoff_to_skip_ind) != n_ind_contexts) {
+      stop("pip_cutoff_to_skip_ind must be a scalar or a vector with length equal to the number of individual contexts (", n_ind_contexts, ").")
+    }
+  }
+
+  # Validate pip_cutoff_to_skip_sumstat: scalar → named vector for all studies
+  if (!is.null(region_data$sumstat_data)) {
+    all_study_names <- unlist(lapply(region_data$sumstat_data$sumstats, names))
+    if (length(pip_cutoff_to_skip_sumstat) == 1 && is.null(names(pip_cutoff_to_skip_sumstat))) {
+      pip_cutoff_to_skip_sumstat <- setNames(rep(pip_cutoff_to_skip_sumstat, length(all_study_names)), all_study_names)
+    } else if (!is.null(names(pip_cutoff_to_skip_sumstat))) {
+      # Named vector: fill missing studies with 0
+      missing <- setdiff(all_study_names, names(pip_cutoff_to_skip_sumstat))
+      if (length(missing) > 0) {
+        pip_cutoff_to_skip_sumstat <- c(pip_cutoff_to_skip_sumstat, setNames(rep(0, length(missing)), missing))
+      }
+    }
+  }
+
   #### related internal functions
   # Add context names to colname of Y if missing
   add_context_to_Y <- function(res_Y) {

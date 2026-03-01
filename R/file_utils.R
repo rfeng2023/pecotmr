@@ -249,7 +249,12 @@ load_phenotype_data <- function(phenotype_path, region, extract_region_name = NU
         stop("region_name_col is out of bounds for the number of columns in tabix_data.")
       }
     } else {
-      return(tabix_data %>% t())
+      result <- tabix_data %>% t()
+      # Assign region names from region_name_col if available
+      if (!is.null(region_name_col) && (region_name_col %% 1 == 0) && region_name_col <= ncol(tabix_data)) {
+        colnames(result) <- tabix_data[[region_name_col]]
+      }
+      return(result)
     }
   }))
 
