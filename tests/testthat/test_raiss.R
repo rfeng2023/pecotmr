@@ -32,6 +32,7 @@ generate_dummy_data <- function(seed=1, ref_panel_ordered=TRUE, known_zscores_or
 }
 
 test_that("Input validation for raiss works correctly", {
+    input_data <- generate_dummy_data()
     input_data_ref_panel_unordered <- generate_dummy_data(ref_panel_ordered=FALSE)
     input_data_zscores_unordered <- generate_dummy_data(known_zscores_ordered=FALSE)
     expect_error(raiss(input_data_ref_panel_unordered$ref_panel, input_data$known_zscores, input_data$LD_matrix))

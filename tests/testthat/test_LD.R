@@ -49,7 +49,7 @@ test_that("Check that we correctly retrieve the names from the matrix",{
   write_delim(data$meta, LD_meta_file_path, delim = "\t")
   res <- load_LD_matrix(LD_meta_file_path, region)
   variants <- unlist(
-    c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"))
+    c("chr1:1000:A:G", "chr1:1040:A:G", "chr1:1080:A:G", "chr1:1120:A:G", "chr1:1160:A:G"))
   expect_equal(
     unlist(res$combined_LD_variants),
     variants)
@@ -63,7 +63,7 @@ test_that("Check that the LD block has the appropriate rownames and colnames",{
   write_delim(data$meta, LD_meta_file_path, delim = "\t")
   res <- load_LD_matrix(LD_meta_file_path, region)
   variants <- unlist(
-    c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"))
+    c("chr1:1000:A:G", "chr1:1040:A:G", "chr1:1080:A:G", "chr1:1120:A:G", "chr1:1160:A:G"))
   expect_identical(rownames(res$combined_LD_matrix), variants)
   expect_identical(colnames(res$combined_LD_matrix), variants)
   file.remove(LD_meta_file_path)
@@ -77,7 +77,7 @@ test_that("Check that the LD block contains the correct information",{
   res <- load_LD_matrix(LD_meta_file_path, region)
   # Variant names
   variants <- unlist(
-    c("1:1000:A:G", "1:1040:A:G", "1:1080:A:G", "1:1120:A:G", "1:1160:A:G"))
+    c("chr1:1000:A:G", "chr1:1040:A:G", "chr1:1080:A:G", "chr1:1120:A:G", "chr1:1160:A:G"))
   # Check LD Block 1
   ld_block_one <- res$combined_LD_matrix
   ld_block_one_original <- as.matrix(

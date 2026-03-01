@@ -37,6 +37,9 @@ jobs:
         with:
           manifest-path: /tmp/pixi/pixi.toml
 
+      - name: Install GitHub-only dependencies
+        run: pixi run --environment r44 --manifest-path /tmp/pixi/pixi.toml install_github_deps
+
       - name: Build pkgdown site
         run: pixi run --environment r44 --manifest-path /tmp/pixi/pixi.toml pkgdown_build
 

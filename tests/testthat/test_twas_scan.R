@@ -108,7 +108,7 @@ mock_weights_db <- function(seed = 1, region = "chr1:100-200", condition = "mono
     )
   )
   weights_db <- list(random_gene = list(condition = weights_db_data))
-  names(weights_db$random_gene) <- condition
+  names(weights_db$random_gene) <- paste0(condition, "_", gene)
   names(weights_db) <- gene
   
   # Save the list as an RDS file
