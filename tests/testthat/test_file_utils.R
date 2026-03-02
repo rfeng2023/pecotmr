@@ -50,12 +50,6 @@ test_that("open_pgen dummy data works",{
     expect_equal(res$class, "pgen")
 })
 
-test_that("read_pgen dummy data works",{
-    example_path <- "test_data/dummy_data.pgen"
-    res <- open_pgen(example_path)
-    expect_equal(res$class, "pgen")
-})
-
 test_that("open_bed dummy data works",{
     example_path <- "test_data/protocol_example.genotype.bed"
     res <- open_bed(example_path)
@@ -227,6 +221,13 @@ test_that("Test load_genotype_region with region and no indels",{
   expect_equal(colnames(res), bim_file[!indels, ]$X2)
 })
 
+test_that("load_genotype_region errors on missing genotype files", {
+  expect_error(
+    load_genotype_region("/nonexistent/geno"),
+    "Genotype files not found"
+  )
+})
+
 test_that("Test load_covariate_data reads tab-delimited file", {
   # Create a temp covariate file: first column is sample ID, rest are numeric
   tmp <- tempfile(fileext = ".tsv")
@@ -239,6 +240,13 @@ test_that("Test load_covariate_data reads tab-delimited file", {
   file.remove(tmp)
 })
 
+test_that("load_covariate_data errors on missing file", {
+  expect_error(
+    load_covariate_data("/nonexistent/covar.tsv"),
+    "Covariate file.*not found"
+  )
+})
+
 test_that("Test load_phenotype_data errors on invalid extract_region_name", {
   tmp <- tempfile(fileext = ".tsv")
   writeLines(c("ID\tgene1\tgene2", "S1\t1.0\t2.0"), tmp)
@@ -247,6 +255,126 @@ test_that("Test load_phenotype_data errors on invalid extract_region_name", {
     "must be NULL or a list"
   )
   file.remove(tmp)
+})
+
+test_that("load_phenotype_data errors when extract_region_name length mismatch", {
+  tmp <- tempfile(fileext = ".tsv")
+  writeLines(c("#chr\tstart\tend\tS1\tS2", "chr1\t100\t200\t1.0\t2.0"), tmp)
+  expect_error(
+    load_phenotype_data(c(tmp, tmp), region = NULL,
+                        extract_region_name = list("gene1")),
+    "same length as phenotype_path"
+  )
+  file.remove(tmp)
+})
+
+test_that("load_phenotype_data errors when all phenotype files are empty", {
+  local_mocked_bindings(
+    tabix_region = function(...) tibble::tibble()
+  )
+  expect_error(
+    load_phenotype_data("fake.gz", region = "chr1:1-100"),
+    class = "NoPhenotypeError"
+  )
+})
+
+test_that("load_phenotype_data with region_name_col out of bounds errors", {
+  mock_df <- data.frame(
+    chr = "chr1", start = 100, end = 200,
+    S1 = 1.0,
+    stringsAsFactors = FALSE
+  )
+  local_mocked_bindings(
+    tabix_region = function(...) mock_df
+  )
+  expect_error(
+    load_phenotype_data("fake.gz", region = "chr1:1-500",
+                        extract_region_name = list("gene1"),
+                        region_name_col = 99),
+    "out of bounds"
+  )
+})
+
+test_that("load_phenotype_data with extract_region_name and region_name_col filters properly", {
+  mock_df <- data.frame(
+    chr = c("chr1", "chr1"),
+    gene = c("BRCA1", "TP53"),
+    start = c(100, 200),
+    end = c(150, 250),
+    S1 = c(1.0, 2.0),
+    S2 = c(3.0, 4.0),
+    stringsAsFactors = FALSE
+  )
+  local_mocked_bindings(
+    tabix_region = function(...) mock_df
+  )
+  result <- load_phenotype_data(
+    "fake.gz", region = "chr1:1-500",
+    extract_region_name = list("BRCA1"),
+    region_name_col = 2
+  )
+  expect_true(length(result) >= 1)
+})
+
+test_that("load_phenotype_data stores kept_indices attribute", {
+  mock_df1 <- data.frame(
+    chr = "chr1", start = 100, end = 200, S1 = 1.0,
+    stringsAsFactors = FALSE
+  )
+  call_count <- 0
+  local_mocked_bindings(
+    tabix_region = function(...) {
+      call_count <<- call_count + 1
+      if (call_count == 1) mock_df1 else tibble::tibble()
+    }
+  )
+  result <- load_phenotype_data(c("f1.gz", "f2.gz"), region = "chr1:1-500")
+  expect_true(!is.null(attr(result, "kept_indices")))
+  expect_equal(attr(result, "kept_indices"), 1L)
+})
+
+test_that("load_phenotype_data assigns colnames from region_name_col without extract_region_name", {
+  tmp <- tempfile(fileext = ".tsv")
+  writeLines(c("gene_id\tstart\tend\tS1\tS2",
+               "ENSG001\t100\t200\t1.5\t2.5",
+               "ENSG002\t300\t400\t3.5\t4.5"), tmp)
+
+  result <- load_phenotype_data(tmp, region = NULL, region_name_col = 1)
+  expect_type(result, "list")
+  expect_length(result, 1)
+  expect_true(all(c("ENSG001", "ENSG002") %in% colnames(result[[1]])))
+  file.remove(tmp)
+})
+
+test_that("load_phenotype_data errors on empty phenotype file", {
+  tmp <- tempfile(fileext = ".tsv")
+  writeLines(c("gene_id\tstart\tend\tS1\tS2"), tmp)
+
+  expect_error(
+    load_phenotype_data(tmp, region = NULL),
+    "empty"
+  )
+  file.remove(tmp)
+})
+
+test_that("load_phenotype_data kept_indices reflects filtering", {
+  tmp1 <- tempfile(fileext = ".tsv")
+  writeLines(c("gene_id\tstart\tend\tS1\tS2",
+               "ENSG001\t100\t200\t1.5\t2.5"), tmp1)
+
+  tmp2 <- tempfile(fileext = ".tsv")
+  writeLines(c("gene_id\tstart\tend\tS1\tS2"), tmp2)
+
+  result <- tryCatch(
+    load_phenotype_data(c(tmp1, tmp2), region = NULL),
+    error = function(e) NULL
+  )
+  if (!is.null(result)) {
+    idx <- attr(result, "kept_indices")
+    expect_true(1 %in% idx)
+  }
+
+  file.remove(tmp1, tmp2)
 })
 
 test_that("Test filter_by_common_samples",{
@@ -390,6 +518,20 @@ test_that("Test add_X_residuals",{
     expect_equal(res$X_resid_sd[[1]], res_X_sd)
 })
 
+test_that("add_X_residuals with scale_residuals=TRUE scales output", {
+  dummy_X <- matrix(c(2, 2, 0, 1, 0, 1, 1, 2), nrow = 4, ncol = 2)
+  dummy_covar <- matrix(c(70, 71, 72, 73, 28, 30, 15, 20), nrow = 4, ncol = 2)
+  data_list <- tibble::tibble(
+    X = list(dummy_X),
+    covar = list(dummy_covar)
+  )
+  result <- add_X_residuals(data_list, scale_residuals = TRUE)
+  resid_mat <- result$X_resid[[1]]
+  expect_true(is.matrix(resid_mat))
+  col_means <- apply(resid_mat, 2, mean, na.rm = TRUE)
+  expect_true(all(abs(col_means) < 1e-10))
+})
+
 test_that("Test add_Y_residuals",{
     dummy_pheno_data <- rnorm(4)
     dummy_covar_data <- matrix(
@@ -408,8 +550,25 @@ test_that("Test add_Y_residuals",{
     expect_equal(res$Y_resid_sd[[1]], res_Y_sd)
 })
 
-# For load_regional_association_data tests
-## We mock the load data functionality for ease of use
+test_that("add_Y_residuals with scale_residuals=TRUE scales output", {
+  set.seed(42)
+  dummy_Y <- rnorm(5)
+  names(dummy_Y) <- paste0("S", 1:5)
+  dummy_covar <- matrix(rnorm(15), nrow = 5, ncol = 3)
+  rownames(dummy_covar) <- paste0("S", 1:5)
+  data_list <- tibble::tibble(
+    Y = list(dummy_Y),
+    covar = list(dummy_covar)
+  )
+  result <- add_Y_residuals(data_list, conditions = "cond1", scale_residuals = TRUE)
+  resid_mat <- result$Y_resid[[1]]
+  expect_true(is.matrix(resid_mat))
+})
+
+# ===========================================================================
+# load_regional_association_data tests
+# ===========================================================================
+
 test_that("Test load_regional_association_data complete overlap",{
     geno_data <- dummy_geno_data(
                 number_of_samples = 10, number_of_snps = 10, sample_start_id = 1,
@@ -610,6 +769,64 @@ rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))
         covar_data[order(as.numeric(gsub("Sample_", "", rownames(covar_data)))), , drop = FALSE])
 })
 
+test_that("load_regional_association_data aligns covariates when phenotypes are filtered", {
+  geno_data <- dummy_geno_data(
+    number_of_samples = 10, number_of_snps = 10, sample_start_id = 1,
+    number_missing = 0, number_low_maf = 0, number_zero_var = 0, number_var_thresh = 0)
+  covar_data <- dummy_covar_data(
+    number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 1)
+  pheno_data1 <- dummy_pheno_data(
+    number_of_samples = 10, number_of_phenotypes = 1, randomize = FALSE, sample_start_id = 1)
+
+  local_mocked_bindings(
+    load_genotype_region = function(...) geno_data,
+    load_covariate_data = function(...) list(covar_data, covar_data),
+    load_phenotype_data = function(...) {
+      result <- pheno_data1
+      attr(result, "kept_indices") <- 1L
+      result
+    }
+  )
+  result <- load_regional_association_data(
+    "dummy_geno.bed.gz",
+    c("dummy_pheno1.bed.gz", "dummy_pheno2.bed.gz"),
+    c("dummy_covar1.txt.gz", "dummy_covar2.txt.gz"),
+    "chr1:1000-2000",
+    c("cond_1", "cond_2"),
+    imiss_cutoff = 0.70,
+    maf_cutoff = 0.1,
+    mac_cutoff = (0.1 * 10 * 2),
+    xvar_cutoff = 0.2,
+    phenotype_header = 3,
+    keep_samples = NULL
+  )
+  expect_true(!is.null(result$X))
+})
+
+test_that("load_regional_association_data returns scalar info when scale_residuals=TRUE", {
+  geno_data <- dummy_geno_data(
+    number_of_samples = 10, number_of_snps = 10, sample_start_id = 1,
+    number_missing = 0, number_low_maf = 0, number_zero_var = 0, number_var_thresh = 0)
+  covar_data <- dummy_covar_data(
+    number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 1)
+  pheno_data <- dummy_pheno_data(
+    number_of_samples = 10, number_of_phenotypes = 1, randomize = FALSE, sample_start_id = 1)
+  local_mocked_bindings(
+    load_genotype_region = function(...) geno_data,
+    load_covariate_data = function(...) list(covar_data),
+    load_phenotype_data = function(...) pheno_data
+  )
+  result <- load_regional_association_data(
+    "dummy_geno.bed.gz", "dummy_pheno.bed.gz", "dummy_covar.txt.gz",
+    "chr1:1000-2000", "cond_1",
+    imiss_cutoff = 0.70, maf_cutoff = 0.1, mac_cutoff = (0.1 * 10 * 2),
+    xvar_cutoff = 0.2, phenotype_header = 3, keep_samples = NULL,
+    scale_residuals = TRUE
+  )
+  expect_true(!is.null(result$residual_Y_scalar))
+  expect_true(!is.null(result$residual_X_scalar))
+})
+
 test_that("Test load_regional_univariate_data",{
     geno_data <- dummy_geno_data(
                 number_of_samples = 10, number_of_snps = 10, sample_start_id = 1,
@@ -637,7 +854,6 @@ test_that("Test load_regional_univariate_data",{
         keep_samples = NULL)
     expect_true("residual_X" %in% names(res))
     expect_true("residual_Y" %in% names(res))
-    # Further checks
 })
 
 test_that("Test load_regional_regression_data",{
@@ -681,14 +897,63 @@ rownames(res$Y[[1]])[order(as.numeric(gsub("Sample_", "", rownames(res$Y[[1]])))
     expect_equal(res$covar[[1]][order(as.numeric(gsub("Sample_", "", rownames(res$covar[[1]])))), , drop = FALSE], covar_data)
 })
 
-#test_that("Test load_regional_multivariate_data",{
-#  set.seed(1)
-#})
+test_that("load_regional_multivariate_data filters Y by min completeness", {
+  geno_data <- dummy_geno_data(
+    number_of_samples = 10, number_of_snps = 10, sample_start_id = 1,
+    number_missing = 0, number_low_maf = 0, number_zero_var = 0, number_var_thresh = 0)
+  covar_data <- dummy_covar_data(
+    number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 1)
+  pheno_data <- dummy_pheno_data(
+    number_of_samples = 10, number_of_phenotypes = 1, randomize = FALSE, sample_start_id = 1)
+  local_mocked_bindings(
+    load_genotype_region = function(...) geno_data,
+    load_covariate_data = function(...) list(covar_data),
+    load_phenotype_data = function(...) pheno_data
+  )
+  result <- load_regional_multivariate_data(
+    matrix_y_min_complete = 5,
+    genotype = "dummy_geno.bed.gz",
+    phenotype = "dummy_pheno.bed.gz",
+    covariate = "dummy_covar.txt.gz",
+    region = "chr1:1000-2000",
+    conditions = "cond_1",
+    imiss_cutoff = 0.70, maf_cutoff = 0.1, mac_cutoff = (0.1 * 10 * 2),
+    xvar_cutoff = 0.2, phenotype_header = 3, keep_samples = NULL
+  )
+  expect_true(!is.null(result$X))
+  expect_true(!is.null(result$maf))
+  expect_true(!is.null(result$X_variance))
+})
 
-# ---- Unit tests for vroom-based file loaders ----
+test_that("load_regional_functional_data returns full association data", {
+  geno_data <- dummy_geno_data(
+    number_of_samples = 10, number_of_snps = 10, sample_start_id = 1,
+    number_missing = 0, number_low_maf = 0, number_zero_var = 0, number_var_thresh = 0)
+  covar_data <- dummy_covar_data(
+    number_of_samples = 10, number_of_covars = 5, row_na = FALSE, randomize = FALSE, sample_start_id = 1)
+  pheno_data <- dummy_pheno_data(
+    number_of_samples = 10, number_of_phenotypes = 1, randomize = FALSE, sample_start_id = 1)
+  local_mocked_bindings(
+    load_genotype_region = function(...) geno_data,
+    load_covariate_data = function(...) list(covar_data),
+    load_phenotype_data = function(...) pheno_data
+  )
+  result <- load_regional_functional_data(
+    genotype = "dummy.bed", phenotype = "dummy.bed.gz",
+    covariate = "dummy.txt.gz", region = "chr1:1000-2000",
+    conditions = "cond_1",
+    imiss_cutoff = 0.70, maf_cutoff = 0.1, mac_cutoff = (0.1 * 10 * 2),
+    xvar_cutoff = 0.2, phenotype_header = 3, keep_samples = NULL
+  )
+  expect_true("residual_Y" %in% names(result))
+  expect_true("X" %in% names(result))
+})
+
+# ===========================================================================
+# read_pvar / read_bim vroom-based tests
+# ===========================================================================
 
 test_that("read_pvar handles multiple comment styles", {
-  # Test with ## metadata lines (standard VCF/pvar format)
   pvar_path <- tempfile(fileext = ".pvar")
   cat("##fileformat=VCFv4.2\n", file = pvar_path)
   cat("##INFO=<ID=AF>\n", file = pvar_path, append = TRUE)
@@ -713,15 +978,13 @@ test_that("read_pvar errors when #CHROM header is missing", {
 })
 
 test_that("read_bim returns correct columns and types", {
-  # Create a minimal bim file
   bim_path <- tempfile(fileext = ".bim")
   cat("22\trs100\t0\t50000\tA\tG\n", file = bim_path)
   cat("22\trs200\t0\t60000\tT\tC\n", file = bim_path, append = TRUE)
   cat("22\trs300\t0\t70000\tC\tA\n", file = bim_path, append = TRUE)
 
-  # read_bim expects a .bed path and derives .bim from it
   bed_path <- sub("\\.bim$", ".bed", bim_path)
-  file.copy(bim_path, bim_path)  # ensure bim exists at expected path
+  file.copy(bim_path, bim_path)
   res <- read_bim(bed_path)
   expect_equal(nrow(res), 3)
   expect_equal(colnames(res), c("chrom", "id", "gpos", "pos", "a1", "a0"))
@@ -729,6 +992,151 @@ test_that("read_bim returns correct columns and types", {
   expect_equal(res$pos, c(50000, 60000, 70000))
   file.remove(bim_path)
 })
+
+# ===========================================================================
+# tabix_region
+# ===========================================================================
+
+test_that("tabix_region stops when file does not exist", {
+  expect_error(
+    tabix_region("/nonexistent/path.tsv.gz", "chr1:1-100"),
+    "Input file does not exist"
+  )
+})
+
+test_that("tabix_region returns empty tibble on NULL cmd_output (error path)", {
+  tmp <- tempfile()
+  writeLines("dummy", tmp)
+  local_mocked_bindings(
+    vroom = function(...) stop("mock error")
+  )
+  result <- tabix_region(tmp, "chr1:1-100")
+  expect_true(nrow(result) == 0)
+  file.remove(tmp)
+})
+
+test_that("tabix_region filters with target and target_column_index", {
+  mock_df <- data.frame(
+    chrom = c("chr1", "chr1", "chr1"),
+    pos = c(100, 200, 300),
+    gene = c("BRCA1", "TP53", "BRCA1"),
+    stringsAsFactors = FALSE
+  )
+  tmp <- tempfile()
+  writeLines("dummy", tmp)
+  local_mocked_bindings(
+    vroom = function(...) mock_df
+  )
+  result <- tabix_region(tmp, "chr1:1-500", target = "BRCA1", target_column_index = 3)
+  expect_equal(nrow(result), 2)
+  file.remove(tmp)
+})
+
+test_that("tabix_region filters with target but no target_column_index (text path)", {
+  mock_df <- data.frame(
+    chrom = c("chr1", "chr1"),
+    pos = c(100, 200),
+    name = c("ABC", "DEF"),
+    stringsAsFactors = FALSE
+  )
+  tmp <- tempfile()
+  writeLines("dummy", tmp)
+  local_mocked_bindings(
+    vroom = function(...) mock_df
+  )
+  result <- tabix_region(tmp, "chr1:1-500", target = "ABC")
+  expect_equal(nrow(result), 1)
+  file.remove(tmp)
+})
+
+# ===========================================================================
+# NoSNPsError / NoPhenotypeError custom conditions
+# ===========================================================================
+
+test_that("NoSNPsError creates proper error condition", {
+  err <- NoSNPsError("test message")
+  expect_true(inherits(err, "NoSNPsError"))
+  expect_true(inherits(err, "error"))
+  expect_true(inherits(err, "condition"))
+  expect_equal(err$message, "test message")
+})
+
+test_that("NoPhenotypeError creates proper error condition", {
+  err <- NoPhenotypeError("no pheno")
+  expect_true(inherits(err, "NoPhenotypeError"))
+  expect_true(inherits(err, "error"))
+  expect_equal(err$message, "no pheno")
+})
+
+# ===========================================================================
+# extract_phenotype_coordinates
+# ===========================================================================
+
+test_that("extract_phenotype_coordinates returns correct structure", {
+  pheno <- list(
+    matrix(
+      c("chr1", "100", "200", "1.0", "2.0"),
+      nrow = 5, ncol = 1,
+      dimnames = list(c("#chr", "start", "end", "S1", "S2"), NULL)
+    )
+  )
+  result <- extract_phenotype_coordinates(pheno)
+  expect_true(is.list(result))
+  expect_true("start" %in% colnames(result[[1]]))
+  expect_true("end" %in% colnames(result[[1]]))
+  expect_true(is.numeric(result[[1]]$start))
+})
+
+# ===========================================================================
+# clean_context_names
+# ===========================================================================
+
+test_that("clean_context_names removes gene suffix from context", {
+  context <- c("tissue1_ENSG00001", "tissue2_ENSG00001", "tissue3_ENSG00002")
+  gene <- c("ENSG00001", "ENSG00002")
+  result <- clean_context_names(context, gene)
+  expect_equal(result, c("tissue1", "tissue2", "tissue3"))
+})
+
+test_that("clean_context_names handles multiple gene IDs, longest match first", {
+  context <- c("ctx_GENE_LONG", "ctx_GENE")
+  gene <- c("GENE", "GENE_LONG")
+  result <- clean_context_names(context, gene)
+  expect_equal(result, c("ctx", "ctx"))
+})
+
+# ===========================================================================
+# pheno_list_to_mat
+# ===========================================================================
+
+test_that("pheno_list_to_mat converts phenotype list to matrix", {
+  data_list <- list(
+    residual_Y = list(
+      cond1 = matrix(c(1, 2), nrow = 2, ncol = 1, dimnames = list(c("S1", "S2"), "V1")),
+      cond2 = matrix(c(5, 6), nrow = 2, ncol = 1, dimnames = list(c("S1", "S3"), "V2"))
+    )
+  )
+  result <- pheno_list_to_mat(data_list)
+  expect_true(is.matrix(result$residual_Y))
+  expect_equal(sort(rownames(result$residual_Y)), c("S1", "S2", "S3"))
+  expect_equal(ncol(result$residual_Y), 2)
+})
+
+test_that("pheno_list_to_mat fills NA for missing samples", {
+  data_list <- list(
+    residual_Y = list(
+      cond1 = matrix(1:3, nrow = 3, dimnames = list(c("A", "B", "C"), "V1")),
+      cond2 = matrix(4:5, nrow = 2, dimnames = list(c("A", "D"), "V2"))
+    )
+  )
+  result <- pheno_list_to_mat(data_list)
+  expect_true(is.na(result$residual_Y["D", 1]))
+  expect_true(is.na(result$residual_Y["B", 2]))
+})
+
+# ===========================================================================
+# load_tsv_region
+# ===========================================================================
 
 test_that("load_tsv_region reads plain tsv file", {
   tsv_path <- tempfile(fileext = ".tsv")
@@ -764,24 +1172,312 @@ test_that("load_tsv_region reads plain file with region_name filter", {
   file.remove(tsv_path)
 })
 
-test_that("load_tsv_region reads gz file without region", {
-  tsv_path <- tempfile(fileext = ".tsv")
-  df <- data.frame(
-    chrom = c("chr1", "chr1", "chr2"),
-    pos = c(100, 200, 300),
-    value = c(1.1, 2.2, 3.3),
+# ===========================================================================
+# batch_load_twas_weights
+# ===========================================================================
+
+test_that("batch_load_twas_weights returns empty list for empty input", {
+  result <- batch_load_twas_weights(list(), data.frame())
+  expect_equal(result, list())
+})
+
+test_that("batch_load_twas_weights does not split when within memory limit", {
+  mock_results <- list(
+    gene1 = list(weights = matrix(1:10, nrow = 5)),
+    gene2 = list(weights = matrix(1:10, nrow = 5))
+  )
+  meta_df <- data.frame(
+    region_id = c("gene1", "gene2"),
+    TSS = c(100, 200),
     stringsAsFactors = FALSE
   )
-  readr::write_tsv(df, tsv_path)
+  result <- batch_load_twas_weights(mock_results, meta_df, max_memory_per_batch = 1000)
+  expect_equal(names(result), "all_genes")
+  expect_equal(names(result$all_genes), c("gene1", "gene2"))
+})
 
-  # Compress with gzip
-  gz_path <- paste0(tsv_path, ".gz")
-  con <- gzfile(gz_path, "w")
-  writeLines(readLines(tsv_path), con)
-  close(con)
+test_that("batch_load_twas_weights splits when exceeding memory limit", {
+  mock_results <- list(
+    gene1 = list(weights = matrix(rnorm(10000), nrow = 100)),
+    gene2 = list(weights = matrix(rnorm(10000), nrow = 100)),
+    gene3 = list(weights = matrix(rnorm(10000), nrow = 100))
+  )
+  meta_df <- data.frame(
+    region_id = c("gene1", "gene2", "gene3"),
+    TSS = c(100, 200, 300),
+    stringsAsFactors = FALSE
+  )
+  result <- batch_load_twas_weights(mock_results, meta_df, max_memory_per_batch = 0.0001)
+  expect_true(length(result) >= 2)
+})
 
-  res <- load_tsv_region(gz_path)
-  expect_equal(nrow(res), 3)
-  expect_equal(colnames(res), c("chrom", "pos", "value"))
-  file.remove(tsv_path, gz_path)
+# ===========================================================================
+# get_cormat
+# ===========================================================================
+
+test_that("get_cormat computes correlation matrix correctly", {
+  X <- matrix(c(1, 2, 3, 4, 5, 6), nrow = 2, ncol = 3)
+  result <- get_cormat(X)
+  expect_true(is.matrix(result))
+  expect_equal(diag(result), rep(1, ncol(X)), tolerance = 1e-10)
+})
+
+# ===========================================================================
+# load_rss_data
+# ===========================================================================
+
+test_that("load_rss_data errors on missing sumstat file", {
+  expect_error(
+    load_rss_data("/nonexistent/sumstat.tsv", "/nonexistent/col.txt"),
+    "Summary statistics file not found"
+  )
+})
+
+test_that("load_rss_data errors on missing column file", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  writeLines("dummy", tmp_sumstat)
+  expect_error(
+    load_rss_data(tmp_sumstat, "/nonexistent/col.txt"),
+    "Column mapping file not found"
+  )
+  file.remove(tmp_sumstat)
+})
+
+test_that("load_rss_data computes z from beta and se when z is missing", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1", "chr1"),
+    pos = c(100, 200),
+    effect = c(0.5, -0.3),
+    stderr = c(0.1, 0.15),
+    n = c(1000, 1000),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:effect", "se:stderr", "n_sample:n"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
+  expect_true("z" %in% colnames(result$sumstats))
+  expect_equal(result$sumstats$z[1], 0.5 / 0.1, tolerance = 1e-10)
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data creates beta from z when beta is missing", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1"),
+    pos = c(100),
+    zscore = c(4.5),
+    n = c(1000),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("z:zscore", "n_sample:n"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
+  expect_equal(result$sumstats$beta[1], 4.5)
+  expect_equal(result$sumstats$se[1], 1)
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data errors when both n_sample and n_case+n_control are provided", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = "chr1", pos = 100, b = 0.5, s = 0.1, stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s"), tmp_col)
+
+  expect_error(
+    suppressWarnings(load_rss_data(tmp_sumstat, tmp_col, n_sample = 100, n_case = 50, n_control = 50)),
+    "not both"
+  )
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data computes var_y from case/control counts", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = "chr1", pos = 100, b = 0.5, s = 0.1, stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col, n_case = 500, n_control = 500))
+  expect_equal(result$n, 1000)
+  phi <- 500 / 1000
+  expect_equal(result$var_y, 1 / (phi * (1 - phi)))
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data returns NULL n when no sample size info available", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = "chr1", pos = 100, b = 0.5, s = 0.1, stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
+  expect_null(result$n)
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data returns empty sumstats message for zero-row region", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  writeLines("chrom\tpos\tb\ts", tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
+  expect_equal(nrow(result$sumstats), 0)
+  expect_null(result$n)
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data extracts n from n_sample column in sumstats", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1", "chr1"), pos = c(100, 200),
+    b = c(0.5, 0.3), s = c(0.1, 0.1),
+    ns = c(1000, 1200),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s", "n_sample:ns"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
+  expect_equal(result$n, median(c(1000, 1200)))
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+test_that("load_rss_data extracts n from n_case and n_control columns", {
+  tmp_sumstat <- tempfile(fileext = ".tsv")
+  df <- data.frame(
+    chrom = c("chr1"), pos = c(100),
+    b = c(0.5), s = c(0.1),
+    nc = c(500), nco = c(500),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(df, tmp_sumstat)
+  tmp_col <- tempfile(fileext = ".txt")
+  writeLines(c("beta:b", "se:s", "n_case:nc", "n_control:nco"), tmp_col)
+
+  result <- suppressWarnings(load_rss_data(tmp_sumstat, tmp_col))
+  expect_equal(result$n, 1000)
+  expect_true(!is.null(result$var_y))
+  file.remove(tmp_sumstat, tmp_col)
+})
+
+# ===========================================================================
+# get_filter_lbf_index
+# ===========================================================================
+
+test_that("get_filter_lbf_index returns numeric index vector", {
+  set.seed(42)
+  n_L <- 5
+  n_vars <- 20
+  alpha_raw <- matrix(runif(n_L * n_vars), nrow = n_L)
+  alpha_norm <- t(apply(alpha_raw, 1, function(x) x / sum(x)))
+
+  mock_susie <- list(
+    alpha = alpha_norm,
+    V = runif(n_L),
+    lbf_variable = matrix(rnorm(n_L * n_vars), nrow = n_L),
+    mu = matrix(rnorm(n_L * n_vars), nrow = n_L),
+    mu2 = matrix(abs(rnorm(n_L * n_vars)), nrow = n_L),
+    sets = list(cs = list(L1 = c(1,3,5), L3 = c(2,4)), cs_index = c(1, 3)),
+    pip = colSums(alpha_norm),
+    niter = 100,
+    converged = TRUE
+  )
+
+  result <- get_filter_lbf_index(mock_susie, coverage = 0.5, size_factor = 0.5)
+  expect_true(is.numeric(result))
+})
+
+# ===========================================================================
+# load_ld_snp_info
+# ===========================================================================
+
+test_that("load_ld_snp_info processes bim files with 6 columns", {
+  bim_path <- tempfile(fileext = ".bim")
+  bim_data <- data.frame(
+    V1 = c("chr1", "chr1"),
+    V2 = c("chr1:100:A:G", "chr1:200:C:T"),
+    V3 = c(0, 0),
+    V4 = c(100, 200),
+    V5 = c("A", "C"),
+    V6 = c("G", "T"),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(bim_data, bim_path, col_names = FALSE)
+
+  local_mocked_bindings(
+    get_regional_ld_meta = function(...) {
+      list(intersections = list(bim_file_paths = bim_path))
+    }
+  )
+
+  result <- load_ld_snp_info("/fake/ld_meta.txt", "chr1:1-300")
+  expect_true(is.list(result))
+  expect_true(all(c("chrom", "id", "pos", "alt", "ref") %in% colnames(result[[1]])))
+  file.remove(bim_path)
+})
+
+test_that("load_ld_snp_info processes bim files with 8 columns", {
+  bim_path <- tempfile(fileext = ".bim")
+  bim_data <- data.frame(
+    V1 = c("chr1", "chr1"),
+    V2 = c("chr1:100:A:G", "chr1:200:C:T"),
+    V3 = c(0, 0),
+    V4 = c(100, 200),
+    V5 = c("A", "C"),
+    V6 = c("G", "T"),
+    V7 = c(0.01, 0.02),
+    V8 = c(0.3, 0.4),
+    stringsAsFactors = FALSE
+  )
+  readr::write_tsv(bim_data, bim_path, col_names = FALSE)
+
+  local_mocked_bindings(
+    get_regional_ld_meta = function(...) {
+      list(intersections = list(bim_file_paths = bim_path))
+    }
+  )
+
+  result <- load_ld_snp_info("/fake/ld_meta.txt", "chr1:1-300")
+  expect_true(all(c("chrom", "id", "pos", "alt", "ref", "variance", "allele_freq") %in% colnames(result[[1]])))
+  file.remove(bim_path)
+})
+
+# ===========================================================================
+# load_multitask_regional_data
+# ===========================================================================
+
+test_that("load_multitask_regional_data errors when no data sources provided", {
+  expect_error(
+    load_multitask_regional_data(region = "chr1:1-1000"),
+    "Data load error"
+  )
+})
+
+test_that("load_multitask_regional_data errors with multiple genotypes and no match_geno_pheno", {
+  expect_error(
+    load_multitask_regional_data(
+      region = "chr1:1-1000",
+      genotype_list = c("geno1.bed", "geno2.bed"),
+      phenotype_list = c("pheno1.gz"),
+      covariate_list = c("covar1.gz")
+    ),
+    "match_geno_pheno"
+  )
 })

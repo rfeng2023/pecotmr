@@ -43,7 +43,7 @@ mr_format <- function(susie_result, condition, gwas_sumstats_db, coverage = "cs_
     {
       get_nested_element(susie_result, c("susie_results", condition, "top_loci"))
     },
-    error = function() { # No parameter here
+    error = function(e) {
       message("top_loci does not exist for the specified condition in susie_result.")
       return(NULL)
     }

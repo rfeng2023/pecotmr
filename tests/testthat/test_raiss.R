@@ -40,10 +40,23 @@ test_that("Input validation for raiss works correctly", {
 })
 
 test_that("Default parameters for raiss work correctly", {
-    # TODO - ask Gao about merging on removed columns
     input_data <- generate_dummy_data()
     result <- raiss(input_data$ref_panel, input_data$known_zscores, input_data$LD_matrix)
     expect_true(is.list(result))
+    # Expected list elements
+    expect_true(all(c("result_nofilter", "result_filter", "LD_mat") %in% names(result)))
+    # result_nofilter should be a data frame with expected columns
+    expect_true(is.data.frame(result$result_nofilter))
+    expect_true(all(c("variant_id", "z", "Var", "raiss_ld_score") %in% names(result$result_nofilter)))
+    # Imputed z-scores should be numeric and finite
+    expect_true(is.numeric(result$result_nofilter$z))
+    expect_true(all(is.finite(result$result_nofilter$z)))
+    # Output should cover all ref_panel variants (known + imputed)
+    expect_equal(nrow(result$result_nofilter), nrow(input_data$ref_panel))
+    # Filtered result should be a subset of unfiltered
+    expect_true(nrow(result$result_filter) <= nrow(result$result_nofilter))
+    # LD_mat should be a matrix
+    expect_true(is.matrix(result$LD_mat))
 })
 
 test_that("Test Default Parameters for raiss_model", {
@@ -53,8 +66,16 @@ test_that("Test Default Parameters for raiss_model", {
 
   result <- raiss_model(zt, sig_t, sig_i_t)
 
-  expect_is(result, "list")
-  expect_true(all(names(result) %in% c("var", "mu", "raiss_ld_score", "condition_number", "correct_inversion")))
+  expect_true(is.list(result))
+  expect_true(all(c("var", "mu", "raiss_ld_score", "condition_number", "correct_inversion") %in% names(result)))
+  # mu (imputed z-scores) should be numeric and finite
+  expect_true(is.numeric(result$mu))
+  expect_true(all(is.finite(result$mu)))
+  # var should be numeric
+  expect_true(is.numeric(result$var))
+  # raiss_ld_score should be numeric and non-negative
+  expect_true(is.numeric(result$raiss_ld_score))
+  expect_true(all(result$raiss_ld_score >= 0))
 })
 
 test_that("Test with Different lamb Values for raiss_model", {
@@ -65,7 +86,10 @@ test_that("Test with Different lamb Values for raiss_model", {
   lamb_values <- c(0.01, 0.05, 0.1)
   for (lamb in lamb_values) {
     result <- raiss_model(zt, sig_t, sig_i_t, lamb)
-    expect_is(result, "list")
+    expect_true(is.list(result))
+    expect_true(all(c("var", "mu", "raiss_ld_score") %in% names(result)))
+    expect_true(is.numeric(result$mu))
+    expect_true(all(is.finite(result$mu)))
   }
 })
 
@@ -77,8 +101,12 @@ test_that("Report Condition Number in raiss_model", {
   result_with_cn <- raiss_model(zt, sig_t, sig_i_t, report_condition_number = TRUE)
   result_without_cn <- raiss_model(zt, sig_t, sig_i_t, report_condition_number = FALSE)
 
-  expect_is(result_with_cn, "list")
-  expect_is(result_without_cn, "list")
+  expect_true(is.list(result_with_cn))
+  expect_true(is.list(result_without_cn))
+  # With condition number reporting, condition_number should be populated
+  expect_true(is.numeric(result_with_cn$condition_number))
+  expect_true(all(is.finite(result_with_cn$mu)))
+  expect_true(all(is.finite(result_without_cn$mu)))
 })
 
 test_that("Input Validation of raiss_model", {
@@ -117,8 +145,10 @@ test_that("Test with Different rcond Values for raiss_model", {
   rcond_values <- c(0.01, 0.05, 0.1)
   for (rcond in rcond_values) {
     result <- raiss_model(zt, sig_t, sig_i_t, lamb = 0.01, rcond = rcond)
-    expect_is(result, "list")
-    expect_true(all(names(result) %in% c("var", "mu", "raiss_ld_score", "condition_number", "correct_inversion")))
+    expect_true(is.list(result))
+    expect_true(all(c("var", "mu", "raiss_ld_score", "condition_number", "correct_inversion") %in% names(result)))
+    expect_true(is.numeric(result$mu))
+    expect_true(all(is.finite(result$mu)))
   }
 })
 
@@ -250,19 +280,21 @@ generate_mock_data_for_compute_var <- function(seed=1) {
 test_that("compute_var returns correct output for batch = TRUE", {
     input_data <- generate_mock_data_for_compute_var()
     result <- compute_var(input_data$sig_i_t_1, input_data$sig_t_inv_1, input_data$lamb_1, batch = TRUE)
-    expect_is(result, "list")
+    expect_true(is.list(result))
     expect_length(result, 2)
-    expect_true("var" %in% names(result))
-    expect_true("raiss_ld_score" %in% names(result))
+    expect_true(all(c("var", "raiss_ld_score") %in% names(result)))
+    expect_true(is.numeric(result$var))
+    expect_true(is.numeric(result$raiss_ld_score))
 })
 
 test_that("compute_var returns correct output for batch = FALSE", {
     input_data <- generate_mock_data_for_compute_var()
     result <- compute_var(input_data$sig_i_t_1, input_data$sig_t_inv_1, input_data$lamb_1, batch = FALSE)
-    expect_is(result, "list")
+    expect_true(is.list(result))
     expect_length(result, 2)
-    expect_true("var" %in% names(result))
-    expect_true("raiss_ld_score" %in% names(result))
+    expect_true(all(c("var", "raiss_ld_score") %in% names(result)))
+    expect_true(is.numeric(result$var))
+    expect_true(is.numeric(result$raiss_ld_score))
 })
 
 test_that("check_inversion correctly identifies inverse matrices in", {

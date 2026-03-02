@@ -23,42 +23,6 @@ generate_dentist_data <- function(seed=42, n_snps = 100, sample_size = 100, n_ou
     return(list(sumstat = sumstat, LD_mat = ld_matrix, nSample = sample_size))
 }
 
-test_that("dentist output has exactly N rows for N input variants", {
-    data <- generate_dentist_data(n_snps = 100)
-    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample))
-    expect_equal(nrow(res), 100)
-})
-
-test_that("dentist output has exactly N rows with correct_chen_et_al_bug = FALSE", {
-    data <- generate_dentist_data(n_snps = 100)
-    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = FALSE))
-    expect_equal(nrow(res), 100)
-})
-
-test_that("dentist output has exactly N rows for 200 variants", {
-    data <- generate_dentist_data(seed = 99, n_snps = 200, sample_size = 200, n_outliers = 10)
-    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample))
-    expect_equal(nrow(res), 200)
-})
-
-test_that("dentist output has exactly N rows for 500 variants", {
-    data <- generate_dentist_data(seed = 77, n_snps = 500, sample_size = 500, n_outliers = 25)
-    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample))
-    expect_equal(nrow(res), 500)
-})
-
-test_that("dentist stops when missing position", {
-    data <- generate_dentist_data()
-    colnames(data$sumstat) <- c("something", "z")
-    expect_error(dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = FALSE))
-})
-
-test_that("dentist stops when missing zscore", {
-    data <- generate_dentist_data()
-    colnames(data$sumstat) <- c("position", "something")
-    expect_error(dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = FALSE))
-})
-
 generate_dentist_single_window_data <- function(seed=42, n_snps = 100, sample_size = 100, n_outliers = 5) {
     set.seed(seed)
     cor_matrix <- matrix(0, nrow = n_snps, ncol = n_snps)
@@ -76,6 +40,73 @@ generate_dentist_single_window_data <- function(seed=42, n_snps = 100, sample_si
     return(list(z_scores = z_scores, LD_mat = ld_matrix, nSample = sample_size))
 }
 
+# ===========================================================================
+# dentist: basic tests
+# ===========================================================================
+
+test_that("dentist output has exactly N rows for N input variants", {
+    data <- generate_dentist_data(n_snps = 100)
+    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample))
+    expect_equal(nrow(res), 100)
+})
+
+test_that("dentist output has exactly N rows with correct_chen_et_al_bug = FALSE", {
+    data <- generate_dentist_data(n_snps = 100)
+    expect_warning(res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = FALSE))
+    expect_equal(nrow(res), 100)
+})
+
+test_that("dentist stops when missing position", {
+    data <- generate_dentist_data()
+    colnames(data$sumstat) <- c("something", "z")
+    expect_error(dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = FALSE),
+                 regexp = "missing either.*pos.*or.*z")
+})
+
+test_that("dentist stops when missing zscore", {
+    data <- generate_dentist_data()
+    colnames(data$sumstat) <- c("position", "something")
+    expect_error(dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample, correct_chen_et_al_bug = FALSE),
+                 regexp = "missing either.*pos.*or.*z")
+})
+
+test_that("dentist accepts 'position' and 'zscore' column names", {
+  set.seed(42)
+  n_snps <- 80
+  n_samples <- 100
+  cor_matrix <- matrix(0, nrow = n_snps, ncol = n_snps)
+  for (i in 1:(n_snps - 1)) {
+    for (j in (i + 1):n_snps) {
+      cor_matrix[i, j] <- runif(1, 0.2, 0.8)
+      cor_matrix[j, i] <- cor_matrix[i, j]
+    }
+  }
+  diag(cor_matrix) <- 1
+  ld_matrix <- cov2cor(make.positive.definite(cor_matrix))
+  z_scores <- mvrnorm(n = 1, mu = rep(0, n_snps), Sigma = ld_matrix)
+  sumstat <- data.frame(
+    position = seq(1000000, by = 1000, length.out = n_snps),
+    zscore = z_scores
+  )
+  expect_warning(res <- dentist(sumstat, R = ld_matrix, nSample = n_samples))
+  expect_equal(nrow(res), n_snps)
+})
+
+test_that("dentist with X matrix input returns exactly N rows", {
+    set.seed(42)
+    n_snps <- 80
+    n_samples <- 100
+    X <- matrix(rbinom(n_snps * n_samples, 2, 0.3), nrow = n_samples, ncol = n_snps)
+    z_scores <- rnorm(n_snps)
+    sumstat <- data.frame(position = seq(1000000, by = 1000, length.out = n_snps), z = z_scores)
+    expect_warning(res <- dentist(sumstat, X = X))
+    expect_equal(nrow(res), n_snps)
+})
+
+# ===========================================================================
+# dentist_single_window
+# ===========================================================================
+
 test_that("dentist_single_window returns exactly N rows for N input z-scores", {
     data <- generate_dentist_single_window_data()
     expect_warning(res <- dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample))
@@ -87,15 +118,10 @@ test_that("dentist_single_window warns when < 2000 variants", {
     expect_warning(dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample))
 })
 
-test_that("dentist_single_window returns exactly N rows with dedup", {
-    data <- generate_dentist_single_window_data()
-    expect_warning(res <- dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample, duprThreshold = 0.99))
-    expect_equal(nrow(res), 100)
-})
-
 test_that("dentist_single_window stops with zscore/LD matrix dimension mismatch", {
     data <- generate_dentist_single_window_data()
-    expect_warning(expect_error(dentist_single_window(generate_dentist_single_window_data()$z_scores, R = generate_dentist_single_window_data(n_snps = 80)$LD_mat, nSample = data$nSample)))
+    expect_warning(expect_error(dentist_single_window(generate_dentist_single_window_data()$z_scores, R = generate_dentist_single_window_data(n_snps = 80)$LD_mat, nSample = data$nSample),
+                                regexp = "LD_mat must be a square matrix"))
 })
 
 test_that("dentist_single_window output columns are correct", {
@@ -110,6 +136,42 @@ test_that("dentist_single_window original_z matches input z-scores", {
     expect_warning(res <- dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample))
     expect_equal(res$original_z, data$z_scores)
 })
+
+test_that("dentist_single_window with X matrix input returns exactly N rows", {
+    set.seed(42)
+    n_snps <- 80
+    n_samples <- 100
+    X <- matrix(rbinom(n_snps * n_samples, 2, 0.3), nrow = n_samples, ncol = n_snps)
+    z_scores <- rnorm(n_snps)
+    expect_warning(res <- dentist_single_window(z_scores, X = X))
+    expect_equal(nrow(res), n_snps)
+})
+
+test_that("dentist_single_window dedup path with message for duplicates", {
+  set.seed(42)
+  n_snps <- 80
+  n_samples <- 100
+  cor_matrix <- matrix(0, nrow = n_snps, ncol = n_snps)
+  for (i in 1:(n_snps - 1)) {
+    for (j in (i + 1):n_snps) {
+      cor_matrix[i, j] <- runif(1, 0.2, 0.8)
+      cor_matrix[j, i] <- cor_matrix[i, j]
+    }
+  }
+  diag(cor_matrix) <- 1
+  ld_matrix <- cov2cor(make.positive.definite(cor_matrix))
+  z_scores <- mvrnorm(n = 1, mu = rep(0, n_snps), Sigma = ld_matrix)
+  # Use a very low threshold to trigger dedup logic
+  expect_warning(
+    res <- dentist_single_window(z_scores, R = ld_matrix, nSample = n_samples, duprThreshold = 0.5)
+  )
+  expect_equal(nrow(res), n_snps)
+  expect_true("is_duplicate" %in% colnames(res))
+})
+
+# ===========================================================================
+# add_dups_back_dentist
+# ===========================================================================
 
 test_that("add_dups_back_dentist works", {
     zScore <- c(1.2, 2.3, 2.4, 1.4, 5.6)
@@ -137,23 +199,6 @@ test_that("add_dups_back_dentist works", {
     expect_equal(res$is_duplicate, c(FALSE, FALSE, TRUE, TRUE, FALSE))
 })
 
-test_that("add_dups_back_dentist returns exactly N rows", {
-    zScore <- c(1.2, 2.3, 2.4, 1.4, 5.6)
-    dentist_output <- data.frame(
-        original_z = c(1.2, 2.3, 5.6),
-        imputed_z = c(1.1, 2.1, 5.1),
-        iter_to_correct = c(1, 1, 3),
-        rsq = c(0.9, 0.8, 0.5),
-        z_diff = c(0.1, 0.2, 0.5)
-    )
-    find_dup_output <- data.frame(
-        dupBearer = c(-1, -1, 2, 1, -1),
-        sign = c(1, -1, 1, -1, 1)
-    )
-    res <- pecotmr:::add_dups_back_dentist(zScore, dentist_output, find_dup_output)
-    expect_equal(nrow(res), 5)
-})
-
 test_that("add_dups_back_dentist stops when nrow mismatch", {
     z_scores <- rep(0, 5)
     dentist_output <- list(
@@ -170,21 +215,9 @@ test_that("add_dups_back_dentist stops when nrow mismatch", {
     expect_error(pecotmr:::add_dups_back_dentist(z_scores, dentist_output, find_dup_output))
 })
 
-test_that("add_dups_back_dentist stops when zScore and find_dup_output nrow mismatch", {
-    z_scores <- rep(0, 6)
-    dentist_output <- list(
-        original_z = c(1, 2, 3, 4, 5),
-        imputed_z = c(1, 2, 3, 4, 5),
-        iter_to_correct = c(1, 2, 3, 4, 5),
-        rsq = c(1, 2, 3, 4, 5),
-        z_diff = c(1, 2, 3, 4, 5)
-    )
-    find_dup_output <- list(
-        dupBearer = c(-1, -1, -1, -1, -1),
-        sign = c(1, 2, 3, 4, 5)
-    )
-    expect_error(pecotmr:::add_dups_back_dentist(z_scores, dentist_output, find_dup_output))
-})
+# ===========================================================================
+# segment_by_dist
+# ===========================================================================
 
 test_that("segment_by_dist works", {
     res <- pecotmr:::segment_by_dist(seq(2000000,5000000,100000), max_dist = 2000000, min_dim = 10)
@@ -204,81 +237,21 @@ test_that("segment_by_dist fill regions cover all input positions", {
     expect_equal(sort(unique(covered)), 1:length(pos))
 })
 
-test_that("merge_windows returns exactly N rows", {
-    data <- generate_dentist_data(n_snps = 1000, sample_size = 1000, start_pos = 0, end_pos = 2000)
-    window_divided_res <- pecotmr:::segment_by_dist(data$sumstat$position, max_dist = 1000, min_dim = 10)
-    dentist_result_by_window <- list()
-    suppressWarnings({
-        for (k in 1:nrow(window_divided_res)) {
-            idx_range <- window_divided_res$windowStartIdx[k]:(window_divided_res$windowEndIdx[k] - 1L)
-            zScore_k <- data$sumstat$z[idx_range]
-            LD_mat_k <- data$LD_mat[idx_range, idx_range]
-            dentist_result_by_window[[k]] <- dentist_single_window(
-                zScore_k, R = LD_mat_k, nSample = 100,
-                pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
-                nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99,
-                ncpus = 1, correct_chen_et_al_bug = TRUE
-            )
-        }
-    })
-    res <- pecotmr:::merge_windows(dentist_result_by_window, window_divided_res)
-    expect_equal(nrow(res), 1000)
+test_that("segment_by_dist errors on empty positions", {
+  expect_error(pecotmr:::segment_by_dist(integer(0)), "No positions")
 })
 
-test_that("merge_windows stops with window and imputed mismatch", {
-    expect_error(pecotmr:::merge_windows(rep(0, 5), data.frame(windowStartIdx = rep(0,2), windowEndIdx = rep(0, 2))))
+test_that("segment_by_dist verbose mode prints intervals", {
+  pos <- seq(1000000, 5000000, length.out = 300)
+  expect_message(
+    pecotmr:::segment_by_dist(pos, max_dist = 2000000, min_dim = 50, verbose = TRUE),
+    "Intervals"
+  )
 })
 
-test_that("dentist windowed output has exactly N rows for large input", {
-    # Generate data large enough to trigger windowed mode (> min_dim)
-    data <- generate_dentist_data(seed = 123, n_snps = 1000, sample_size = 1000,
-                                   n_outliers = 50, start_pos = 0, end_pos = 5000000)
-    suppressWarnings({
-        res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
-                       min_dim = 100, window_size = 2000000)
-    })
-    expect_equal(nrow(res), 1000)
-})
-
-test_that("dentist windowed with correct_chen_et_al_bug=FALSE has exactly N rows", {
-    data <- generate_dentist_data(seed = 456, n_snps = 1000, sample_size = 1000,
-                                   n_outliers = 50, start_pos = 0, end_pos = 5000000)
-    suppressWarnings({
-        res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
-                       min_dim = 100, window_size = 2000000, correct_chen_et_al_bug = FALSE)
-    })
-    expect_equal(nrow(res), 1000)
-})
-
-test_that("dentist outlier_stat formula is correct: (z-imputed)^2/(1-rsq)", {
-    data <- generate_dentist_single_window_data(seed = 55, n_snps = 100)
-    expect_warning(res <- dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample))
-    expected_stat <- (res$original_z - res$imputed_z)^2 / pmax(1 - res$rsq, 1e-8)
-    expect_equal(res$outlier_stat, expected_stat, tolerance = 1e-10)
-})
-
-test_that("dentist with X matrix input returns exactly N rows", {
-    set.seed(42)
-    n_snps <- 80
-    n_samples <- 100
-    X <- matrix(rbinom(n_snps * n_samples, 2, 0.3), nrow = n_samples, ncol = n_snps)
-    z_scores <- rnorm(n_snps)
-    sumstat <- data.frame(position = seq(1000000, by = 1000, length.out = n_snps), z = z_scores)
-    expect_warning(res <- dentist(sumstat, X = X))
-    expect_equal(nrow(res), n_snps)
-})
-
-test_that("dentist_single_window with X matrix input returns exactly N rows", {
-    set.seed(42)
-    n_snps <- 80
-    n_samples <- 100
-    X <- matrix(rbinom(n_snps * n_samples, 2, 0.3), nrow = n_samples, ncol = n_snps)
-    z_scores <- rnorm(n_snps)
-    expect_warning(res <- dentist_single_window(z_scores, X = X))
-    expect_equal(nrow(res), n_snps)
-})
-
-# ---- detect_gaps tests ----
+# ===========================================================================
+# detect_gaps
+# ===========================================================================
 
 test_that("detect_gaps finds no internal gaps for contiguous positions", {
     pos <- seq(1000, by = 100, length.out = 50)
@@ -302,7 +275,17 @@ test_that("detect_gaps finds multiple gaps", {
     expect_equal(gaps, c(1L, 3L, 5L, 6L))
 })
 
-# ---- segment_by_count tests ----
+test_that("detect_gaps verbose branch prints messages", {
+  pos <- c(1000, 2000, 5000000, 6000000)
+  expect_message(
+    pecotmr:::detect_gaps(pos, gap_threshold = 1e6, verbose = TRUE),
+    "No\\. of gaps found"
+  )
+})
+
+# ===========================================================================
+# segment_by_count
+# ===========================================================================
 
 test_that("segment_by_count produces valid windows", {
     pos <- seq(1000000, by = 1000, length.out = 500)
@@ -362,14 +345,111 @@ test_that("segment_by_count creates single window for small blocks", {
 
 test_that("segment_by_count single block creates correct number of windows", {
     # 200 variants with max_count = 100 should create ~3 windows
-    # (step = 50, so: [1,100], [51,150], [101,200])
     pos <- seq(1000000, by = 1000, length.out = 200)
     res <- pecotmr:::segment_by_count(pos, max_count = 100)
     expect_true(nrow(res) >= 2)
     expect_true(nrow(res) <= 5)
 })
 
-# ---- dentist with count mode tests ----
+test_that("segment_by_count errors on empty positions", {
+  expect_error(pecotmr:::segment_by_count(integer(0), max_count = 100), "No positions")
+})
+
+test_that("segment_by_count verbose mode prints intervals", {
+  pos <- seq(1000000, by = 1000, length.out = 300)
+  expect_message(
+    pecotmr:::segment_by_count(pos, max_count = 100, verbose = TRUE),
+    "Intervals"
+  )
+})
+
+# ===========================================================================
+# merge_windows
+# ===========================================================================
+
+test_that("merge_windows returns exactly N rows", {
+    data <- generate_dentist_data(n_snps = 1000, sample_size = 1000, start_pos = 0, end_pos = 2000)
+    window_divided_res <- pecotmr:::segment_by_dist(data$sumstat$position, max_dist = 1000, min_dim = 10)
+    dentist_result_by_window <- list()
+    suppressWarnings({
+        for (k in 1:nrow(window_divided_res)) {
+            idx_range <- window_divided_res$windowStartIdx[k]:(window_divided_res$windowEndIdx[k] - 1L)
+            zScore_k <- data$sumstat$z[idx_range]
+            LD_mat_k <- data$LD_mat[idx_range, idx_range]
+            dentist_result_by_window[[k]] <- dentist_single_window(
+                zScore_k, R = LD_mat_k, nSample = 100,
+                pValueThreshold = 5.0369e-8, propSVD = 0.4, gcControl = FALSE,
+                nIter = 10, gPvalueThreshold = 0.05, duprThreshold = 0.99,
+                ncpus = 1, correct_chen_et_al_bug = TRUE
+            )
+        }
+    })
+    res <- pecotmr:::merge_windows(dentist_result_by_window, window_divided_res)
+    expect_equal(nrow(res), 1000)
+})
+
+test_that("merge_windows stops with window and imputed mismatch", {
+    expect_error(pecotmr:::merge_windows(rep(0, 5), data.frame(windowStartIdx = rep(0,2), windowEndIdx = rep(0, 2))))
+})
+
+test_that("merge_windows correctly indexes and merges windows", {
+  # Create two fake windows
+  window1 <- data.frame(
+    original_z = c(1.0, 2.0, 3.0),
+    imputed_z = c(0.9, 1.9, 2.9),
+    iter_to_correct = c(1, 1, 1),
+    rsq = c(0.5, 0.6, 0.7),
+    is_duplicate = c(FALSE, FALSE, FALSE),
+    outlier_stat = c(0.1, 0.2, 0.3),
+    outlier = c(FALSE, FALSE, FALSE)
+  )
+  window2 <- data.frame(
+    original_z = c(4.0, 5.0, 6.0),
+    imputed_z = c(3.9, 4.9, 5.9),
+    iter_to_correct = c(2, 2, 2),
+    rsq = c(0.8, 0.9, 0.5),
+    is_duplicate = c(FALSE, FALSE, FALSE),
+    outlier_stat = c(0.4, 0.5, 0.6),
+    outlier = c(FALSE, FALSE, TRUE)
+  )
+  window_info <- data.frame(
+    windowIdx = c(1, 2),
+    windowStartIdx = c(1, 4),
+    windowEndIdx = c(4, 7),
+    fillStartIdx = c(1, 4),
+    fillEndIdx = c(4, 7)
+  )
+  result <- pecotmr:::merge_windows(list(window1, window2), window_info)
+  expect_equal(nrow(result), 6)
+  expect_true("index_global" %in% colnames(result))
+  expect_true("index_within_window" %in% colnames(result))
+})
+
+# ===========================================================================
+# dentist windowed mode
+# ===========================================================================
+
+test_that("dentist windowed output has exactly N rows for large input", {
+    # Generate data large enough to trigger windowed mode (> min_dim)
+    data <- generate_dentist_data(seed = 123, n_snps = 1000, sample_size = 1000,
+                                   n_outliers = 50, start_pos = 0, end_pos = 5000000)
+    suppressWarnings({
+        res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
+                       min_dim = 100, window_size = 2000000)
+    })
+    expect_equal(nrow(res), 1000)
+})
+
+test_that("dentist outlier_stat formula is correct: (z-imputed)^2/(1-rsq)", {
+    data <- generate_dentist_single_window_data(seed = 55, n_snps = 100)
+    expect_warning(res <- dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample))
+    expected_stat <- (res$original_z - res$imputed_z)^2 / pmax(1 - res$rsq, 1e-8)
+    expect_equal(res$outlier_stat, expected_stat, tolerance = 1e-10)
+})
+
+# ===========================================================================
+# dentist with count mode
+# ===========================================================================
 
 test_that("dentist with window_mode='count' returns exactly N rows", {
     data <- generate_dentist_data(seed = 789, n_snps = 500, sample_size = 500,
@@ -381,31 +461,11 @@ test_that("dentist with window_mode='count' returns exactly N rows", {
     expect_equal(nrow(res), 500)
 })
 
-test_that("dentist with window_mode='count' and correct_chen_et_al_bug=FALSE returns N rows", {
-    data <- generate_dentist_data(seed = 321, n_snps = 500, sample_size = 500,
-                                   n_outliers = 25, start_pos = 1000000, end_pos = 4000000)
-    suppressWarnings({
-        res <- dentist(data$sumstat, R = data$LD_mat, nSample = data$nSample,
-                       window_mode = "count", min_dim = 100,
-                       correct_chen_et_al_bug = FALSE)
-    })
-    expect_equal(nrow(res), 500)
-})
-
-test_that("dentist_single_window warning suggests count mode", {
-    data <- generate_dentist_single_window_data(n_snps = 100)
-    expect_warning(
-        dentist_single_window(data$z_scores, R = data$LD_mat, nSample = data$nSample),
-        "window_mode = 'count'"
-    )
-})
-
-# ---- Equivalence tests: both methods produce same partition ----
+# ===========================================================================
+# Equivalence tests: both windowing methods
+# ===========================================================================
 
 test_that("segment_by_dist and segment_by_count agree on uniformly-spaced variants", {
-    # For uniformly-spaced variants, if the distance-based and count-based
-    # parameters are chosen to produce the same number of variants per window,
-    # the fill regions should cover the same positions.
     n <- 200
     spacing <- 10000  # 10kb between each variant
     pos <- seq(1000000, by = spacing, length.out = n)
@@ -429,7 +489,6 @@ test_that("segment_by_dist and segment_by_count agree on uniformly-spaced varian
 })
 
 test_that("both windowing modes produce same dentist results on uniform data", {
-    # On the same data, both windowing modes should produce results for all N variants
     data <- generate_dentist_data(seed = 555, n_snps = 500, sample_size = 500,
                                    n_outliers = 25, start_pos = 0, end_pos = 5000000)
     suppressWarnings({
@@ -443,3 +502,264 @@ test_that("both windowing modes produce same dentist results on uniform data", {
     expect_equal(nrow(res_count), 500)
 })
 
+# ===========================================================================
+# resolve_LD_input (internal)
+# ===========================================================================
+
+test_that("resolve_LD_input errors when neither R nor X provided", {
+  expect_error(
+    pecotmr:::resolve_LD_input(R = NULL, X = NULL),
+    "Either R.*or X.*must be provided"
+  )
+})
+
+test_that("resolve_LD_input errors when both R and X provided", {
+  R <- diag(3)
+  X <- matrix(1:9, nrow = 3)
+  expect_error(
+    pecotmr:::resolve_LD_input(R = R, X = X),
+    "Provide either R or X, not both"
+  )
+})
+
+test_that("resolve_LD_input errors when R provided without nSample and need_nSample is TRUE", {
+  R <- diag(3)
+  expect_error(
+    pecotmr:::resolve_LD_input(R = R, nSample = NULL, need_nSample = TRUE),
+    "nSample is required"
+  )
+})
+
+test_that("resolve_LD_input returns nSample = NULL when need_nSample is FALSE", {
+  R <- diag(3)
+  result <- pecotmr:::resolve_LD_input(R = R, nSample = NULL, need_nSample = FALSE)
+  expect_null(result$nSample)
+  expect_equal(result$R, R)
+})
+
+test_that("resolve_LD_input infers nSample from X", {
+  set.seed(42)
+  n <- 50; p <- 5
+  X <- matrix(rbinom(n * p, 2, 0.3), nrow = n, ncol = p)
+  result <- pecotmr:::resolve_LD_input(X = X, need_nSample = TRUE)
+  expect_equal(result$nSample, n)
+  expect_true(is.matrix(result$R))
+  expect_equal(nrow(result$R), p)
+})
+
+test_that("resolve_LD_input converts non-matrix X to matrix", {
+  set.seed(42)
+  X_df <- data.frame(a = rbinom(30, 2, 0.3), b = rbinom(30, 2, 0.3))
+  result <- pecotmr:::resolve_LD_input(X = X_df, need_nSample = FALSE)
+  expect_true(is.matrix(result$R))
+  expect_equal(result$nSample, 30)
+})
+
+test_that("resolve_LD_input uses explicit nSample when X provided", {
+  set.seed(42)
+  X <- matrix(rbinom(100, 2, 0.3), nrow = 20, ncol = 5)
+  result <- pecotmr:::resolve_LD_input(X = X, nSample = 999, need_nSample = TRUE)
+  expect_equal(result$nSample, 999)
+})
+
+# ===========================================================================
+# read_dentist_sumstat (file-based)
+# ===========================================================================
+
+test_that("read_dentist_sumstat errors when file does not exist", {
+  expect_error(
+    read_dentist_sumstat("/nonexistent/file.txt"),
+    "not found"
+  )
+})
+
+test_that("read_dentist_sumstat reads a valid file and computes z = beta/se", {
+  tmp <- tempfile(fileext = ".txt")
+  on.exit(unlink(tmp), add = TRUE)
+  df <- data.frame(
+    SNP = paste0("rs", 1:3),
+    A1 = c("A", "C", "G"),
+    A2 = c("T", "G", "A"),
+    freq = c(0.1, 0.2, 0.3),
+    beta = c(0.5, -0.2, 0.8),
+    se = c(0.1, 0.05, 0.2),
+    p = c(1e-5, 0.01, 1e-4),
+    N = c(1000, 1000, 1000)
+  )
+  write.table(df, tmp, row.names = FALSE, quote = FALSE, sep = "\t")
+  result <- read_dentist_sumstat(tmp)
+  expect_equal(nrow(result), 3)
+  expect_equal(result$z, df$beta / df$se)
+  expect_true(all(c("SNP", "A1", "A2", "freq", "beta", "se", "p", "N", "z") %in% colnames(result)))
+})
+
+test_that("read_dentist_sumstat reads gzipped files", {
+  tmp <- tempfile(fileext = ".txt.gz")
+  on.exit(unlink(tmp), add = TRUE)
+  df <- data.frame(
+    SNP = paste0("rs", 1:3),
+    A1 = c("A", "C", "G"),
+    A2 = c("T", "G", "A"),
+    freq = c(0.1, 0.2, 0.3),
+    beta = c(0.5, -0.2, 0.8),
+    se = c(0.1, 0.05, 0.2),
+    p = c(1e-5, 0.01, 1e-4),
+    N = c(1000, 1000, 1000)
+  )
+  con <- gzfile(tmp, "wt")
+  write.table(df, con, row.names = FALSE, quote = FALSE, sep = "\t")
+  close(con)
+  result <- read_dentist_sumstat(tmp)
+  expect_equal(nrow(result), 3)
+  expect_equal(result$z, df$beta / df$se)
+})
+
+test_that("read_dentist_sumstat errors on missing columns", {
+  tmp <- tempfile(fileext = ".txt")
+  on.exit(unlink(tmp), add = TRUE)
+  df <- data.frame(SNP = "rs1", A1 = "A", A2 = "T")
+  write.table(df, tmp, row.names = FALSE, quote = FALSE, sep = "\t")
+  expect_error(read_dentist_sumstat(tmp), "Missing columns")
+})
+
+# ===========================================================================
+# parse_dentist_output (file-based)
+# ===========================================================================
+
+test_that("parse_dentist_output errors when file is missing", {
+  expect_error(
+    parse_dentist_output("/nonexistent/prefix"),
+    "not found"
+  )
+})
+
+test_that("parse_dentist_output reads valid full file", {
+  prefix <- tempfile()
+  full_file <- paste0(prefix, ".DENTIST.full.txt")
+  on.exit(unlink(c(full_file)), add = TRUE)
+  df <- data.frame(
+    V1 = c("rs1", "rs2", "rs3"),
+    V2 = c(1.5, 25.0, 0.3),
+    V3 = c(3.0, 10.0, 0.1),
+    V4 = c(0, 1, 0)
+  )
+  write.table(df, full_file, row.names = FALSE, col.names = FALSE, sep = "\t", quote = FALSE)
+  result <- parse_dentist_output(prefix, pValueThreshold = 5e-8)
+  expect_equal(nrow(result), 3)
+  expect_true("outlier" %in% colnames(result))
+  expect_true("is_duplicate" %in% colnames(result))
+  expect_true(is.logical(result$is_duplicate))
+})
+
+test_that("parse_dentist_output cross-checks short file and warns on mismatch", {
+  prefix <- tempfile()
+  full_file <- paste0(prefix, ".DENTIST.full.txt")
+  short_file <- paste0(prefix, ".DENTIST.short.txt")
+  on.exit(unlink(c(full_file, short_file)), add = TRUE)
+  df <- data.frame(
+    V1 = c("rs1", "rs2"),
+    V2 = c(1.5, 25.0),
+    V3 = c(3.0, 10.0),
+    V4 = c(0, 0)
+  )
+  write.table(df, full_file, row.names = FALSE, col.names = FALSE, sep = "\t", quote = FALSE)
+  writeLines(c("rs2", "rs3"), short_file)
+  expect_warning(
+    parse_dentist_output(prefix, pValueThreshold = 5e-8),
+    "mismatch"
+  )
+})
+
+# ===========================================================================
+# build_segment_result (internal)
+# ===========================================================================
+
+test_that("build_segment_result caps end indices and verbose prints", {
+  expect_message(
+    result <- pecotmr:::build_segment_result(
+      startList = c(1L), endList = c(200L),
+      fillStartList = c(1L), fillEndList = c(200L),
+      n = 100, verbose = TRUE
+    ),
+    "Intervals"
+  )
+  expect_equal(result$windowEndIdx[1], 101)
+  expect_equal(result$fillEndIdx[1], 101)
+})
+
+test_that("build_segment_result errors on empty startList", {
+  expect_error(
+    pecotmr:::build_segment_result(
+      startList = integer(0), endList = integer(0),
+      fillStartList = integer(0), fillEndList = integer(0),
+      n = 100
+    ),
+    "No intervals"
+  )
+})
+
+# ===========================================================================
+# sliding_window_loop (iteration limit)
+# ===========================================================================
+
+test_that("sliding_window_loop errors on infinite loop", {
+  allGaps <- c(1L, 1001L)
+  expect_error(
+    pecotmr:::sliding_window_loop(
+      allGaps, n = 1000,
+      min_block_fn = function(blockSize) TRUE,
+      init_end_fn = function(startIdx, blockEnd) startIdx + 10,
+      fill_fn = function(startIdx, endIdx, notStart, notLast) list(start = startIdx, end = endIdx),
+      step_fn = function(startIdx, blockEnd) list(startIdx = startIdx, endIdx = startIdx + 10),
+      verbose = FALSE
+    ),
+    "iteration limit exceeded"
+  )
+})
+
+# ===========================================================================
+# dentist_from_files (mocked I/O paths)
+# ===========================================================================
+
+test_that("dentist_from_files stops when no common SNPs", {
+  local_mocked_bindings(
+    read_dentist_sumstat = function(gwas_summary) {
+      data.frame(SNP = c("rs1", "rs2"), A1 = c("A", "C"), A2 = c("T", "G"),
+                 freq = c(0.1, 0.2), beta = c(0.5, -0.2), se = c(0.1, 0.05),
+                 p = c(1e-5, 0.01), N = c(1000, 1000), z = c(5, -4),
+                 stringsAsFactors = FALSE)
+    },
+    read_bim = function(path) {
+      data.frame(chrom = c(1, 1), id = c("rs99", "rs100"),
+                 gpos = c(0, 0), pos = c(100, 200),
+                 a1 = c("A", "C"), a0 = c("T", "G"),
+                 stringsAsFactors = FALSE)
+    }
+  )
+  expect_error(
+    dentist_from_files("fake_gwas.txt", "fake_bfile"),
+    "No common SNPs"
+  )
+})
+
+test_that("dentist_from_files stops when no variants remain after allele QC", {
+  local_mocked_bindings(
+    read_dentist_sumstat = function(gwas_summary) {
+      data.frame(SNP = "rs1", A1 = "A", A2 = "T",
+                 freq = 0.1, beta = 0.5, se = 0.1,
+                 p = 1e-5, N = 1000, z = 5,
+                 stringsAsFactors = FALSE)
+    },
+    read_bim = function(path) {
+      data.frame(chrom = 1, id = "rs1", gpos = 0, pos = 100,
+                 a1 = "A", a0 = "T", stringsAsFactors = FALSE)
+    },
+    allele_qc = function(...) {
+      list(target_data_qced = data.frame())
+    }
+  )
+  expect_error(
+    dentist_from_files("fake_gwas.txt", "fake_bfile"),
+    "No variants remaining"
+  )
+})

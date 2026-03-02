@@ -10,7 +10,8 @@ BugReports: https://github.com/StatFunGen/pecotmr/issues
 Authors@R: c(person("Gao Wang",role = c("cre","aut"),
                   email = "wang.gaow@columbia.edu"),
                   person("Daniel Nachun", role = "aut",
-                  email = "dnachun@stanford.edu"))
+                  email = "dnachun@stanford.edu"),
+                  person("StatFunGen Lab", role = "ctb"))
 License: MIT + file LICENSE
 Imports:
     IRanges,
@@ -36,6 +37,7 @@ Imports:
     vroom
 Suggests:
     coda,
+    colocboost,
     GBJ,
     Rfast,
     flashier,
