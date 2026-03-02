@@ -618,14 +618,15 @@ remove_highcorr_snp <- function(X, problematic_cols, strategy = c("correlation",
 #' @param strategy The strategy for removing problematic columns ("variance", "correlation", or "response_correlation")
 #' @return A list containing the cleaned X matrix, beta matrix as twas weight, and pseudo R-squared values
 #' @noRd
-calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correlation", "variance", "response_correlation")) {
+calculate_qr_and_pseudo_R2 <- function(AssocData, tau.list, strategy = c("correlation", "variance", "response_correlation"),
+                                       corr_thresholds = seq(0.75, 0.5, by = -0.05)) {
   # Make sure quantreg is installed
   if (!requireNamespace("quantreg", quietly = TRUE)) {
     stop("To use this function, please install quantreg: https://cran.r-project.org/web/packages/quantreg/index.html")
   }
   strategy <- match.arg(strategy)
   # Check and handle problematic columns affecting the full rank of the design matrix
-  AssocData$X.filter <- check_remove_highcorr_snp(X = AssocData$X.filter, C = AssocData$C, strategy = strategy, response = AssocData$Y)
+  AssocData$X.filter <- check_remove_highcorr_snp(X = AssocData$X.filter, C = AssocData$C, strategy = strategy, response = AssocData$Y, corr_thresholds = corr_thresholds)
   snp_names <- colnames(AssocData$X.filter)
   # Build the cleaned design matrix using the filtered X and unnamed C
 
@@ -819,7 +820,9 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
                                           quantile_twas_tau_list = seq(0.01, 0.99, by = 0.01),
                                           screen_threshold = 0.05,
                                           xi_tau_range = seq(0.1, 0.9, by = 0.05),
-                                          keep_variants = NULL) {
+                                          keep_variants = NULL,
+                                          marginal_beta_calculate = TRUE,
+                                          twas_weight_calculate = TRUE) {
   # Step 1: vQTL
   # Step 1-1: Calculate vQTL rank scores
   message("Step 0: Calculating vQTL rank scores for region ", region_id)
@@ -874,6 +877,13 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
     message("Skipping LD clumping.")
   }
 
+  # Determine whether to skip marginal beta calculation:
+  # - skip if marginal_beta_calculate = FALSE
+  # - skip if keep_variants is provided but empty (length 0)
+  skip_marginal_beta <- !marginal_beta_calculate ||
+    (!is.null(keep_variants) && length(keep_variants) == 0)
+
+  if (!skip_marginal_beta) {
   # Step 4: Fit marginal QR to get beta with SNPs for quantile_qtl_tau_list values
   message("Fitting marginal QR for selected SNPs...")
   X_for_qr <- if (ld_clumping) x_clumped else X_filtered
@@ -905,7 +915,12 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
 
   results$rq_coef_df <- rq_coef_result
   results$beta_heterogeneity <- beta_heterogeneity
+    results$xi_correlation <- xi_correlation
+  } else {
+    message("Skipping marginal beta calculation and heterogeneity analysis.")
+  }
 
+  if (twas_weight_calculate) {
   # Step 6: Optional LD panel filtering and MAF filtering from results of QR_screen
   if (!is.null(ld_reference_meta_file)) {
     message("Starting LD panel filtering...")
@@ -943,31 +958,64 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
     }
   }
 
-  # Step 7: Pre-filter variants by raw p_qr < 0.05 to reduce dimensionality
+    # Step 7-9: Pre-filter by p_qr, corr_filter, then fit QR model
+    # First attempt: p_qr < 0.05, corr_filter down to 0.5
+    # If still singular: retry with p_qr < 0.01, corr_filter down to 0.2
+    pqr_cutoffs <- list(
+      list(pval = 0.05, corr_thresholds = seq(0.75, 0.5, by = -0.05)),
+      list(pval = 0.01, corr_thresholds = seq(0.75, 0.2, by = -0.05))
+    )
+
+    qr_beta_R2_results <- NULL
+    for (attempt in seq_along(pqr_cutoffs)) {
+      pqr_cutoff <- pqr_cutoffs[[attempt]]$pval
+      corr_thresholds <- pqr_cutoffs[[attempt]]$corr_thresholds
+
+      # Step 7: Pre-filter variants by raw p_qr
   raw_pvals <- p.screen$pvec[colnames(X_filtered)]
-  sig_raw <- which(raw_pvals < 0.05)
-  if (length(sig_raw) > 0 && length(sig_raw) < ncol(X_filtered)) {
-    message("Pre-filtering variants by raw p_qr < 0.05: keeping ", length(sig_raw), " out of ", ncol(X_filtered), " variants")
-    X_filtered <- X_filtered[, sig_raw, drop = FALSE]
-  } else if (length(sig_raw) == 0) {
-    results$message <- paste0("No variants with raw p_qr < 0.05 in region ", region_id)
-    return(results)
+      sig_raw <- which(raw_pvals < pqr_cutoff)
+      if (length(sig_raw) == 0) {
+        message("No variants with raw p_qr < ", pqr_cutoff, " in region ", region_id)
+        next
+      }
+      if (length(sig_raw) < ncol(X_filtered)) {
+        message("Pre-filtering variants by raw p_qr < ", pqr_cutoff, ": keeping ", length(sig_raw), " out of ", ncol(X_filtered), " variants")
+        X_pqr_filtered <- X_filtered[, sig_raw, drop = FALSE]
+      } else {
+        X_pqr_filtered <- X_filtered
   }
 
   # Step 8: Filter highly correlated SNPs
   message("Filtering highly correlated SNPs...")
-  if (ncol(X_filtered) > 1) {
-    filtered <- corr_filter(X_filtered, 0.8)
+      if (ncol(X_pqr_filtered) > 1) {
+        filtered <- corr_filter(X_pqr_filtered, 0.8)
     X.filter <- filtered$X.new
   } else {
-    X.filter <- X_filtered
-    results$message <- paste0("Skipping correlation filter because there is only one significant SNP in region ", region_id)
+        X.filter <- X_pqr_filtered
   }
 
   # Step 9: Fit QR and get twas weight and R2 for all taus
-  message("Filter highly correlated SNPs completed. Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
+      message("Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
   AssocData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
-  qr_beta_R2_results <- calculate_qr_and_pseudo_R2(AssocData, quantile_twas_tau_list)
+      qr_beta_R2_results <- tryCatch(
+        {
+          res <- calculate_qr_and_pseudo_R2(AssocData, quantile_twas_tau_list, corr_thresholds = corr_thresholds)
+          res
+        },
+        error = function(e) {
+          message("Attempt ", attempt, " failed (p_qr < ", pqr_cutoff, "): ", e$message)
+          NULL
+        }
+      )
+
+      if (!is.null(qr_beta_R2_results)) break
+    }
+
+    if (is.null(qr_beta_R2_results)) {
+      results$message <- paste0("Failed to fit QR model after all attempts in region ", region_id)
+      return(results)
+    }
+
   X.filter <- qr_beta_R2_results$X.filter
   message("TWAS weights and pseudo R-squared calculations completed.")
 
@@ -976,6 +1024,9 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
   results$twas_weight <- qr_beta_R2_results$beta_mat
   results$pseudo_R2 <- qr_beta_R2_results$pseudo_R2
   results$quantile_twas_prediction <- X.filter %*% results$twas_weight
+  } else {
+    message("Skipping TWAS weight calculation.")
+  }
 
   return(results)
 }
