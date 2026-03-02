@@ -138,9 +138,9 @@ qr_screen <- function(
   }
 
   # Split variant_id and reorder columns
+  parsed <- parse_variant_id(df_result$variant_id)
   df_result <- df_result %>%
-    separate(variant_id, into = c("chr", "pos", "ref", "alt"), sep = "[:_]", remove = FALSE) %>%
-    mutate(chr = as.numeric(gsub("chr", "", chr)), pos = as.numeric(pos))
+    mutate(chr = parsed$chrom, pos = parsed$pos, ref = parsed$A2, alt = parsed$A1)
 
   # Define the column order
   col_order <- c("chr", "pos", "ref", "alt", "phenotype_id", "variant_id", "p_qr")
@@ -353,12 +353,10 @@ perform_qr_analysis <- function(X, Y, Z = NULL, tau_values = seq(0.05, 0.95, by 
       names_from = tau,
       values_from = predictor_coef,
       names_prefix = "coef_qr_"
-    ) %>%
-    separate(variant_id, into = c("chr", "pos", "ref", "alt"), sep = "[:_]", remove = FALSE, fill = "right") %>%
-    mutate(
-      chr = as.numeric(gsub("chr", "", chr)),
-      pos = as.numeric(pos)
-    ) %>%
+    )
+  parsed_ids <- parse_variant_id(result_table_wide$variant_id)
+  result_table_wide <- result_table_wide %>%
+    mutate(chr = parsed_ids$chrom, pos = parsed_ids$pos, ref = parsed_ids$A2, alt = parsed_ids$A1) %>%
     select(chr, pos, ref, alt, everything())
 
   # Return the wide format result table
@@ -720,7 +718,6 @@ calculate_coef_heterogeneity <- function(rq_coef_result) {
 #' @param tau_range Numeric vector of tau values to use (default: seq(0.1, 0.9, by = 0.05))
 #' @param min_valid Minimum number of valid (non-NA) coefficients required (default: 10)
 #' @return A data frame with variant_id, xi, and xi_pval columns
-#' @importFrom XICOR xicor
 #' @export
 calculate_xi_correlation <- function(rq_coef_result, tau_range = seq(0.1, 0.9, by = 0.05), min_valid = 10) {
   if (!requireNamespace("XICOR", quietly = TRUE)) {
@@ -887,79 +884,79 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
     (!is.null(keep_variants) && length(keep_variants) == 0)
 
   if (!skip_marginal_beta) {
-    # Step 4: Fit marginal QR to get beta with SNPs for quantile_qtl_tau_list values
-    message("Fitting marginal QR for selected SNPs...")
-    X_for_qr <- if (ld_clumping) x_clumped else X_filtered
-    if (!is.null(keep_variants)) {
-      variants_to_keep <- intersect(keep_variants, colnames(X_for_qr))
-      if (length(variants_to_keep) > 0) {
-        X_for_qr <- X_for_qr[, variants_to_keep, drop = FALSE]
-        message("Filtered to ", ncol(X_for_qr), " variants from keep_variants list for QR analysis")
-      } else {
-        message("Warning: No variants from keep_variants found in selected SNPs, using all selected SNPs")
-      }
+  # Step 4: Fit marginal QR to get beta with SNPs for quantile_qtl_tau_list values
+  message("Fitting marginal QR for selected SNPs...")
+  X_for_qr <- if (ld_clumping) x_clumped else X_filtered
+  if (!is.null(keep_variants)) {
+    variants_to_keep <- intersect(keep_variants, colnames(X_for_qr))
+    if (length(variants_to_keep) > 0) {
+      X_for_qr <- X_for_qr[, variants_to_keep, drop = FALSE]
+      message("Filtered to ", ncol(X_for_qr), " variants from keep_variants list for QR analysis")
+    } else {
+      message("Warning: No variants from keep_variants found in selected SNPs, using all selected SNPs")
     }
-    rq_coef_result <- perform_qr_analysis(X = X_for_qr, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
+  }
+  rq_coef_result <- perform_qr_analysis(X = X_for_qr, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
 
-    # Step 5: Heterogeneity calculation
-    # Step 5-1: beta_heterogeneity index in marginal model
-    message("Marginal QR for selected SNPs completed. Calculating beta heterogeneity...")
-    beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
-    message("Beta heterogeneity calculation completed.")
+  # Step 5: Heterogeneity calculation
+  # Step 5-1: beta_heterogeneity index in marginal model
+  message("Marginal QR for selected SNPs completed. Calculating beta heterogeneity...")
+  beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
+  message("Beta heterogeneity calculation completed.")
 
-    # Step 5-2: Calculate xi correlation (Chatterjee correlation test)
-    message("Calculating xi correlation for QR coefficients...")
-    xi_correlation <- calculate_xi_correlation(rq_coef_result, tau_range = xi_tau_range, min_valid = 10)
-    message("Xi correlation calculation completed.")
+  # Step 5-2: Calculate xi correlation (Chatterjee correlation test) 
+  message("Calculating xi correlation for QR coefficients...")
+  xi_correlation <- calculate_xi_correlation(rq_coef_result, tau_range = xi_tau_range, min_valid = 10)
+  message("Xi correlation calculation completed.")
 
-    # Merge xi and xi_pval into rq_coef_result (using left_join to preserve row order)
-    rq_coef_result <- rq_coef_result %>%
-      dplyr::left_join(xi_correlation, by = "variant_id")
+  # Merge xi and xi_pval into rq_coef_result (using left_join to preserve row order)
+  rq_coef_result <- rq_coef_result %>%
+    dplyr::left_join(xi_correlation, by = "variant_id")
 
-    results$rq_coef_df <- rq_coef_result
-    results$beta_heterogeneity <- beta_heterogeneity
+  results$rq_coef_df <- rq_coef_result
+  results$beta_heterogeneity <- beta_heterogeneity
     results$xi_correlation <- xi_correlation
   } else {
     message("Skipping marginal beta calculation and heterogeneity analysis.")
   }
 
   if (twas_weight_calculate) {
-    # Step 6: Optional LD panel filtering and MAF filtering from results of QR_screen
-    if (!is.null(ld_reference_meta_file)) {
-      message("Starting LD panel filtering...")
-      ld_result <- tryCatch(
-        {
-          variants_kept <- filter_variants_by_ld_reference(colnames(X_filtered), ld_reference_meta_file)
-          if (length(variants_kept$data) == 0) NULL else variants_kept
-        },
-        error = function(e) {
-          message("Error in LD filtering for region ", region_id, ": ", e$message)
-          NULL
-        }
-      )
+  # Step 6: Optional LD panel filtering and MAF filtering from results of QR_screen
+  if (!is.null(ld_reference_meta_file)) {
+    message("Starting LD panel filtering...")
+    ld_result <- tryCatch(
+      {
+        variants_kept <- filter_variants_by_ld_reference(colnames(X_filtered), ld_reference_meta_file)
+        if (length(variants_kept$data) == 0) NULL else variants_kept
+      },
+      error = function(e) {
+        message("Error in LD filtering for region ", region_id, ": ", e$message)
+        NULL
+      }
+    )
 
-      if (is.null(ld_result)) {
-        results$message <- paste0("No SNPs left or error in LD filtering in region ", region_id)
+    if (is.null(ld_result)) {
+      results$message <- paste0("No SNPs left or error in LD filtering in region ", region_id)
+      return(results)
+    }
+
+    X_filtered <- X_filtered[, ld_result$data, drop = FALSE]
+    message(paste0("Number of SNPs after LD filtering: ", ncol(X_filtered)))
+
+    # MAF filtering
+    if (!is.null(maf)) {
+      maf_filtered <- maf[colnames(X_filtered)] > twas_maf_cutoff
+      X_filtered <- X_filtered[, maf_filtered, drop = FALSE]
+
+      # Check if any SNPs are left after MAF filtering
+      if (ncol(X_filtered) == 0) {
+        results$message <- paste0("No SNPs left after MAF filtering in region ", region_id)
         return(results)
       }
 
-      X_filtered <- X_filtered[, ld_result$data, drop = FALSE]
-      message(paste0("Number of SNPs after LD filtering: ", ncol(X_filtered)))
-
-      # MAF filtering
-      if (!is.null(maf)) {
-        maf_filtered <- maf[colnames(X_filtered)] > twas_maf_cutoff
-        X_filtered <- X_filtered[, maf_filtered, drop = FALSE]
-
-        # Check if any SNPs are left after MAF filtering
-        if (ncol(X_filtered) == 0) {
-          results$message <- paste0("No SNPs left after MAF filtering in region ", region_id)
-          return(results)
-        }
-
-        message(paste0("Number of SNPs after MAF filtering: ", ncol(X_filtered)))
-      }
+      message(paste0("Number of SNPs after MAF filtering: ", ncol(X_filtered)))
     }
+  }
 
     # Step 7-9: Pre-filter by p_qr, corr_filter, then fit QR model
     # First attempt: p_qr < 0.05, corr_filter down to 0.5
@@ -975,7 +972,7 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
       corr_thresholds <- pqr_cutoffs[[attempt]]$corr_thresholds
 
       # Step 7: Pre-filter variants by raw p_qr
-      raw_pvals <- p.screen$pvec[colnames(X_filtered)]
+  raw_pvals <- p.screen$pvec[colnames(X_filtered)]
       sig_raw <- which(raw_pvals < pqr_cutoff)
       if (length(sig_raw) == 0) {
         message("No variants with raw p_qr < ", pqr_cutoff, " in region ", region_id)
@@ -986,20 +983,20 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
         X_pqr_filtered <- X_filtered[, sig_raw, drop = FALSE]
       } else {
         X_pqr_filtered <- X_filtered
-      }
+  }
 
-      # Step 8: Filter highly correlated SNPs
-      message("Filtering highly correlated SNPs...")
+  # Step 8: Filter highly correlated SNPs
+  message("Filtering highly correlated SNPs...")
       if (ncol(X_pqr_filtered) > 1) {
         filtered <- corr_filter(X_pqr_filtered, 0.8)
-        X.filter <- filtered$X.new
-      } else {
+    X.filter <- filtered$X.new
+  } else {
         X.filter <- X_pqr_filtered
-      }
+  }
 
-      # Step 9: Fit QR and get twas weight and R2 for all taus
+  # Step 9: Fit QR and get twas weight and R2 for all taus
       message("Fitting full QR to calculate TWAS weights and pseudo R-squared values...")
-      AssocData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
+  AssocData <- list(X = X, Y = Y, C = Z, X.filter = X.filter)
       qr_beta_R2_results <- tryCatch(
         {
           res <- calculate_qr_and_pseudo_R2(AssocData, quantile_twas_tau_list, corr_thresholds = corr_thresholds)
@@ -1019,14 +1016,14 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
       return(results)
     }
 
-    X.filter <- qr_beta_R2_results$X.filter
-    message("TWAS weights and pseudo R-squared calculations completed.")
+  X.filter <- qr_beta_R2_results$X.filter
+  message("TWAS weights and pseudo R-squared calculations completed.")
 
-    # Add additional results
-    results$twas_variant_names <- colnames(X.filter)
-    results$twas_weight <- qr_beta_R2_results$beta_mat
-    results$pseudo_R2 <- qr_beta_R2_results$pseudo_R2
-    results$quantile_twas_prediction <- X.filter %*% results$twas_weight
+  # Add additional results
+  results$twas_variant_names <- colnames(X.filter)
+  results$twas_weight <- qr_beta_R2_results$beta_mat
+  results$pseudo_R2 <- qr_beta_R2_results$pseudo_R2
+  results$quantile_twas_prediction <- X.filter %*% results$twas_weight
   } else {
     message("Skipping TWAS weight calculation.")
   }
