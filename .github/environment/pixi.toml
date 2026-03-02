@@ -16,7 +16,8 @@ bioccheck = "cd $GITHUB_WORKSPACE; R -e 'BiocCheck::BiocCheck()'"
 use_major_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"major\", push = FALSE)'"
 use_minor_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"minor\", push = FALSE)'"
 use_patch_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"patch\", push = FALSE)'"
-install_github_deps = "cd $GITHUB_WORKSPACE; R -e 'devtools::install_github(\"stephenslab/susieR\", upgrade = \"never\", force = TRUE)'"
+# susieR and all other deps are now provided via conda channels in recipe.yaml
+# install_github_deps = "cd $GITHUB_WORKSPACE; R -e 'devtools::install_github(\"stephenslab/susieR\", upgrade = \"never\", force = TRUE)'"
 pkgdown_build = "cd $GITHUB_WORKSPACE; R -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'"
 
 [feature.r43]

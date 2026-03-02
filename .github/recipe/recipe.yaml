@@ -25,6 +25,7 @@ requirements:
   host:
     - bioconductor-iranges
     - bioconductor-qvalue
+    - bioconductor-s4vectors
     - bioconductor-snpstats
     - r-base
     - r-bigsnpr
@@ -32,15 +33,16 @@ requirements:
     - r-coda
     - r-coloc
     - r-colocboost
-    - r-data.table
     - r-dofuture
     - r-dplyr
     - r-flashier
     - r-fsusier
     - r-furrr
+    - r-future
     - r-gbj
     - r-glmnet
     - r-harmonicmeanp
+    - r-knitr
     - r-magrittr
     - r-mashr
     - r-matrixstats
@@ -56,16 +58,20 @@ requirements:
     - r-readr
     - r-rfast
     - r-rlang
+    - r-rmarkdown
     - r-stringr
     - r-susier
+    - r-testthat
     - r-tibble
     - r-tidyr
+    - r-udr
     - r-vctrs
     - r-vroom
     - r-xicor
   run:
     - bioconductor-iranges
     - bioconductor-qvalue
+    - bioconductor-s4vectors
     - bioconductor-snpstats
     - r-base
     - r-bigsnpr
@@ -73,15 +79,16 @@ requirements:
     - r-coda
     - r-coloc
     - r-colocboost
-    - r-data.table
     - r-dofuture
     - r-dplyr
     - r-flashier
     - r-fsusier
     - r-furrr
+    - r-future
     - r-gbj
     - r-glmnet
     - r-harmonicmeanp
+    - r-knitr
     - r-magrittr
     - r-mashr
     - r-matrixstats
@@ -97,10 +104,13 @@ requirements:
     - r-readr
     - r-rfast
     - r-rlang
+    - r-rmarkdown
     - r-stringr
     - r-susier
+    - r-testthat
     - r-tibble
     - r-tidyr
+    - r-udr
     - r-vctrs
     - r-vroom
     - r-xicor
@@ -110,7 +120,7 @@ tests:
       - R -e "library('pecotmr')"
 
 about:
-  license: GPL-3.0-or-later
+  license: MIT
   license_file: LICENSE
   summary: pecotmr implements pair-wise enrichment, colocalization, TWAS and Mendelian Randomization to integrate QTL and GWAS analysis based on a fine-mapped single effects model.
   homepage: https://github.com/StatFunGen/pecotmr

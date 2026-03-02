@@ -4,26 +4,28 @@ on:
   workflow_dispatch:
   pull_request:
     paths-ignore:
-      - .github/*
       - .gitignore
       - README.md
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci_linux-64:
     name: linux-64 CI
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
         environment: ["r43", "r44"]
-    
+
     steps:
       - name: Checkout pull request branch
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Create TOML from recipe
         run: |
@@ -35,9 +37,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.9.4
         with:
           manifest-path: /tmp/pixi/pixi.toml
-
-      - name: Install GitHub-only dependencies
-        run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml install_github_deps
+          cache: true
 
       - name: Run unit tests
         run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml devtools_test
@@ -46,18 +46,10 @@ jobs:
         if: ${{ matrix.environment == 'r44' }}
         run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml codecov
 
-      #- name: Run R CMD CHECK
-        #run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml rcmdcheck
-
-      #- name: Run BiocCheckGitClone
-        #run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml bioccheck_git_clone
-
-      #- name: Run BiocCheck
-        #run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml bioccheck
-
   ci_osx-arm64:
     name: osx-arm64 CI
     runs-on: macos-14
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -66,8 +58,6 @@ jobs:
     steps:
       - name: Checkout pull request branch
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Create TOML from recipe
         run: |
@@ -79,18 +69,7 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.9.4
         with:
           manifest-path: /tmp/pixi/pixi.toml
-
-      - name: Install GitHub-only dependencies
-        run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml install_github_deps
+          cache: true
 
       - name: Run unit tests
         run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml devtools_test
-
-      #- name: Run R CMD CHECK
-        #run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml rcmdcheck
-
-      #- name: Run BiocCheckGitClone
-        #run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml bioccheck_git_clone
-
-      #- name: Run BiocCheck
-        #run: pixi run --environment ${{ matrix.environment }} --manifest-path /tmp/pixi/pixi.toml bioccheck
