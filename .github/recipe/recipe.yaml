@@ -64,7 +64,7 @@ requirements:
     - r-testthat
     - r-tibble
     - r-tidyr
-    - r-udr
+    # r-udr is a Suggests-only dep, not installed in CI
     - r-vctrs
     - r-vroom
     - r-xicor
@@ -110,7 +110,7 @@ requirements:
     - r-testthat
     - r-tibble
     - r-tidyr
-    - r-udr
+    # r-udr is a Suggests-only dep, not installed in CI
     - r-vctrs
     - r-vroom
     - r-xicor
