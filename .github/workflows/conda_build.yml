@@ -1,6 +1,8 @@
 name: Build conda package
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -26,14 +28,14 @@ jobs:
       ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
-      - name: Checkout pull request branch
+      - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - id: latest-version
-        name: Get latest version
-        if: ${{ github.event.inputs.version }} == "latest"
+      - name: Get latest version
+        id: latest-version
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version == 'latest'
         uses: pozetroninc/github-action-get-latest-release@v0.8.0
         with:
           repository: ${{ github.repository }}
@@ -42,12 +44,23 @@ jobs:
       - name: Set version
         id: set-version
         run: |
-          if [[ ${{ github.event.inputs.version }} != "latest" ]]; then
-            version=${{ github.event.inputs.version }}
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            version="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event.inputs.version }}" != "latest" ]]; then
+            version="${{ github.event.inputs.version }}"
           else
-            version=${{ steps.latest-version.outputs.release }}
+            version="${{ steps.latest-version.outputs.release }}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set build number
+        id: set-build
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "build=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=${{ github.event.inputs.build }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download release
         uses: robinraju/release-downloader@v1
@@ -68,7 +81,7 @@ jobs:
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
           repository=${{ github.repository }}
-          build=${{ github.event.inputs.build }}
+          build=${{ steps.set-build.outputs.build }}
           version=${{ steps.set-version.outputs.version }}
           sha256sum=$(sha256sum /tmp/recipe/${repository//*\//}-${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml
@@ -111,14 +124,14 @@ jobs:
       ANACONDA_OWNER: ${{ vars.ANACONDA_OWNER }}
 
     steps:
-      - name: Checkout pull request branch
+      - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Get latest version
         id: latest-version
-        if: ${{ github.event.inputs.version }} == "latest"
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version == 'latest'
         uses: pozetroninc/github-action-get-latest-release@v0.8.0
         with:
           repository: ${{ github.repository }}
@@ -127,12 +140,23 @@ jobs:
       - name: Set version
         id: set-version
         run: |
-          if [[ ${{ github.event.inputs.version }} != "latest" ]]; then
-            version=${{ github.event.inputs.version }}
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            version="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event.inputs.version }}" != "latest" ]]; then
+            version="${{ github.event.inputs.version }}"
           else
-            version=${{ steps.latest-version.outputs.release }}
+            version="${{ steps.latest-version.outputs.release }}"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set build number
+        id: set-build
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "build=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=${{ github.event.inputs.build }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download release
         uses: robinraju/release-downloader@v1
@@ -153,7 +177,7 @@ jobs:
           cp .github/recipe/recipe.yaml /tmp/recipe/recipe.yaml
           cp .github/recipe/variant_${{ matrix.variant}}.yaml /tmp/recipe/variants.yaml
           repository=${{ github.repository }}
-          build=${{ github.event.inputs.build }}
+          build=${{ steps.set-build.outputs.build }}
           version=${{ steps.set-version.outputs.version }}
           sha256sum=$(sha256sum /tmp/recipe/${repository//*\//}-${version}.tar.gz | cut -d ' ' -f 1)
           sed -i "s/VERSION_PLACEHOLDER/${version}/g" /tmp/recipe/recipe.yaml

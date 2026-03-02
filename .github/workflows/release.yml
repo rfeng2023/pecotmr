@@ -1,6 +1,9 @@
 name: Upload new release
 
 on:
+  push:
+    branches: [main]
+    paths: [DESCRIPTION]
   workflow_dispatch:
     inputs:
       tag:
@@ -24,12 +27,18 @@ on:
         default: true
         required: true
 
+# Prevent duplicate releases when manual dispatch pushes a version commit
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  # Only runs on manual dispatch to bump version in DESCRIPTION
   update_version:
     outputs:
       commit: ${{ steps.commit-changes.outputs.commit_long_sha }}
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.commit }} == "auto"
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.commit == 'auto'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -47,13 +56,13 @@ jobs:
 
       - name: Update version
         run: |
-          if [[ ${{ github.event.inputs.tag }} != "auto" ]]; then
+          if [[ "${{ github.event.inputs.tag }}" != "auto" ]]; then
             sed -i 's/Version: .*$/Version: ${{ github.event.inputs.tag }}/' DESCRIPTION
-          elif [[ ${{ github.event.inputs.increment_major_version }} == "true" ]]; then
+          elif [[ "${{ github.event.inputs.increment_major_version }}" == "true" ]]; then
             pixi run use_major_version
-          elif [[ ${{ github.event.inputs.increment_minor_version }} == "true" ]]; then
+          elif [[ "${{ github.event.inputs.increment_minor_version }}" == "true" ]]; then
             pixi run use_minor_version
-          elif [[ ${{ github.event.inputs.increment_patch_version }} == "true" ]]; then
+          elif [[ "${{ github.event.inputs.increment_patch_version }}" == "true" ]]; then
             pixi run use_patch_version
           fi
 
@@ -64,39 +73,54 @@ jobs:
           push: true
           message: Update version
 
+  # Creates tag + GitHub release — runs for both push and manual triggers
   create_release:
     needs: update_version
+    # Run when update_version succeeds (manual) or is skipped (push trigger)
+    if: always() && (needs.update_version.result == 'success' || needs.update_version.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      INPUT_COMMIT: ${{ github.event.inputs.commit }}
     steps:
       - name: Determine commit
         id: determine-commit
         run: |
-          if [[ ${INPUT_COMMIT} != 'auto' ]]; then
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "commit=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event.inputs.commit }}" != "auto" ]]; then
             echo "commit=${{ github.event.inputs.commit }}" >> "$GITHUB_OUTPUT"
           else
             echo "commit=${{ needs.update_version.outputs.commit }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout HEAD
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.determine-commit.outputs.commit }}
+          fetch-depth: 0
 
-      - name: Set tag
+      - name: Set tag from DESCRIPTION
         id: set-tag
         run: |
-          if [[ ${{ github.event.inputs.tag }} != auto ]]; then
-            tag=${{ github.event.inputs.tag }}
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.tag }}" != "auto" ]]; then
+            tag="${{ github.event.inputs.tag }}"
           else
-            tag=$(grep "Version:" < DESCRIPTION | cut -d ' ' -f 2)
+            tag=$(grep "^Version:" DESCRIPTION | sed 's/Version: *//')
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
+      - name: Check if tag already exists
+        id: check-tag
+        run: |
+          if git rev-parse "refs/tags/${{ steps.set-tag.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Tag ${{ steps.set-tag.outputs.tag }} already exists — skipping release"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create new tag
+        if: steps.check-tag.outputs.exists == 'false'
         id: tag-version
         uses: mathieudutour/github-tag-action@v6.2
         with:
@@ -108,8 +132,9 @@ jobs:
           tag_prefix: ""
 
       - name: Create a GitHub release
+        if: steps.check-tag.outputs.exists == 'false'
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ steps.tag-version.outputs.new_tag }}
-          name: Release ${{ steps.tag-version.outputs.new_tag }}
-          body: ${{ steps.tag-version.outputs.changelog }}
+          tag: ${{ steps.set-tag.outputs.tag }}
+          name: Release ${{ steps.set-tag.outputs.tag }}
+          generateReleaseNotes: true
