@@ -64,7 +64,6 @@ requirements:
     - r-testthat
     - r-tibble
     - r-tidyr
-
     - r-vctrs
     - r-vroom
     - r-xicor
@@ -110,7 +109,6 @@ requirements:
     - r-testthat
     - r-tibble
     - r-tidyr
-
     - r-vctrs
     - r-vroom
     - r-xicor

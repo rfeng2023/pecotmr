@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "r-pecotmr"
 channels = ["dnachun", "conda-forge", "bioconda"]
 platforms = ["linux-64", "osx-arm64"]
@@ -18,7 +18,7 @@ use_minor_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"
 use_patch_version = "cd $GITHUB_WORKSPACE; R -e 'usethis::use_version(which = \"patch\", push = FALSE)'"
 # susieR and all other deps are now provided via conda channels in recipe.yaml
 # install_github_deps = "cd $GITHUB_WORKSPACE; R -e 'devtools::install_github(\"stephenslab/susieR\", upgrade = \"never\", force = TRUE)'"
-pkgdown_build = "cd $GITHUB_WORKSPACE; R -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'"
+pkgdown_build = "cd $GITHUB_WORKSPACE; R -e 'devtools::install(upgrade = \"never\"); pkgdown::build_site_github_pages(new_process = FALSE, install = FALSE)'"
 
 [feature.r43]
 dependencies = {"r-base" = "4.3.*"}
