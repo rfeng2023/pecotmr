@@ -39,6 +39,7 @@ Below are the input parameters for this function for loading individual-level da
 ## 1.1. Loading individual-level data from multiple cohorts
 
 inputs:
+
 - **`region`**: String ; Genomic region of interest in the format of `chr:start-end` for the phenotype region you want to analyze. 
 - **`genotype_list`**: Character vector; Paths for PLINK bed files containing genotype data (do NOT include .bed suffix). 
 - **`phenotype_list`**: Character vector; Paths for phenotype file names.
@@ -112,6 +113,7 @@ imiss_cutoff = 0.9
 ## 1.2. Loading summary statistics from multiple cohorts or datasets
 
 inputs:
+
 - **`sumstat_path_list`**: Character vector; Paths to the summary statistics.
 - **`column_file_path_list`**: Character vector; Paths to the column mapping files. See below for expected format.
 - **`LD_meta_file_path_list`**: Character vector; Paths to LD metadata files. See below for expected format.
