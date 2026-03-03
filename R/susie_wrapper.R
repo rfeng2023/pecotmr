@@ -152,38 +152,64 @@ susie_wrapper <- function(X, y, init_L = 5, max_L = 30, l_step = 5, ...) {
 #' @export
 susie_rss_wrapper <- function(z, R, n = NULL, var_y = NULL, L = 10, max_L = 30, l_step = 5,
                               coverage = 0.95, ...) {
+  original_n <- length(z)
+  keep_indices <- seq_len(original_n)
+
+  if (any(is.na(R))) {
+    na_variants <- rowSums(is.na(R)) > 0 | colSums(is.na(R)) > 0
+    if (all(na_variants)) {
+      stop("All variants have NAs in LD matrix. Cannot proceed with analysis.")
+    }
+    keep_variants <- !na_variants
+    keep_indices <- which(keep_variants)
+    R <- R[keep_variants, keep_variants, drop = FALSE]
+    z <- z[keep_variants]
+    warning(paste("Removed", sum(na_variants), "variants with NAs in LD matrix. Remaining:", length(z)))
+  }
+
+  if (!isSymmetric(R)) {
+    warning("R matrix is not symmetric; forcing symmetry with (R + t(R))/2")
+    R <- (R + t(R)) / 2
+  }
+
   if (L == 1) {
-    return(susie_rss(
+    result <- susie_rss(
       z = z, R = R, var_y = var_y, n = n,
       L = 1, max_iter = 1, coverage = coverage, ...
-    ))
-  }
-  if (L == max_L) {
-    return(susie_rss(
-      z = z, R = R, var_y = var_y, n = n, L = L,
-      coverage = coverage, ...
-    ))
-  }
-  while (TRUE) {
-    st <- proc.time()
-    susie_rss_result <- susie_rss(
+    )
+  } else if (L == max_L) {
+    result <- susie_rss(
       z = z, R = R, var_y = var_y, n = n, L = L,
       coverage = coverage, ...
     )
-    susie_rss_result$time_elapsed <- proc.time() - st
-    # Check for convergence and adjust L if necessary
-    if (!is.null(susie_rss_result$sets$cs)) {
-      if (length(susie_rss_result$sets$cs) >= L && L <= max_L) {
-        L <- L + l_step # Increase L for the next iteration
+  } else {
+    while (TRUE) {
+      st <- proc.time()
+      result <- susie_rss(
+        z = z, R = R, var_y = var_y, n = n, L = L,
+        coverage = coverage, ...
+      )
+      result$time_elapsed <- proc.time() - st
+      if (!is.null(result$sets$cs) && length(result$sets$cs) >= L && L <= max_L) {
+        L <- L + l_step
       } else {
         break
       }
-    } else {
-      break # Break the loop if no credible sets are found
     }
   }
 
-  return(susie_rss_result)
+  # Expand PIP back to original length if variants were dropped,
+  # and remap credible set indices to original positions.
+  if (length(keep_indices) < original_n) {
+    full_pip <- rep(0, original_n)
+    full_pip[keep_indices] <- result$pip
+    result$pip <- full_pip
+    if (!is.null(result$sets$cs)) {
+      result$sets$cs <- lapply(result$sets$cs, function(cs) keep_indices[cs])
+    }
+  }
+
+  return(result)
 }
 
 #' Run the SuSiE RSS pipeline

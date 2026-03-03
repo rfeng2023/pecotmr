@@ -611,6 +611,12 @@ qc_regional_data <- function(region_data,
     for (i in 1:n_LD) {
       LD_data <- sumstat_data$LD_info[[i]]
       sumstats <- sumstat_data$sumstats[[i]]
+
+      # Pre-compute LD partition once per block (shared across all GWAS studies)
+      if (impute) {
+        LD_matrix_partitioned <- partition_LD_matrix(LD_data)
+      }
+
       for (ii in 1:length(sumstats)) {
         sumstat <- sumstats[[ii]]
         if (nrow(sumstat$sumstats) == 0) next
@@ -652,10 +658,9 @@ qc_regional_data <- function(region_data,
           sumstat$sumstats <- qc_results$sumstats
           LD_mat <- qc_results$LD_mat
         }
-        # Perform imputation
+        # Perform imputation (LD_matrix_partitioned pre-computed above per LD block)
         if (impute) {
-          LD_matrix <- partition_LD_matrix(LD_data)
-          impute_results <- raiss(LD_data$ref_panel, sumstat$sumstats, LD_matrix,
+          impute_results <- raiss(LD_data$ref_panel, sumstat$sumstats, LD_matrix_partitioned,
             rcond = impute_opts$rcond,
             R2_threshold = impute_opts$R2_threshold, minimum_ld = impute_opts$minimum_ld, lamb = impute_opts$lamb
           )
