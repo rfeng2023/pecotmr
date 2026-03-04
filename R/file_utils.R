@@ -137,6 +137,7 @@ NoSNPsError <- function(message) {
 #'
 #' @importFrom vroom vroom
 #' @importFrom magrittr %>%
+#' @importFrom readr col_character col_guess col_integer
 #' @export
 load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, keep_variants_path = NULL) {
   # Validate genotype file set exists
@@ -162,7 +163,7 @@ load_genotype_region <- function(genotype, region = NULL, keep_indel = TRUE, kee
     start <- parsed_region$start
     end <- parsed_region$end
     # 6 columns for bim file
-    col_types <- list(readr::col_character(), readr::col_character(), readr::col_guess(), readr::col_integer(), readr::col_guess(), readr::col_guess())
+    col_types <- list(col_character(), col_character(), col_guess(), col_integer(), col_guess(), col_guess())
     # Read a few lines of the bim file to check for 'chr' prefix
     bim_sample <- vroom(paste0(genotype, ".bim"), n_max = 5, col_names = FALSE, col_types = col_types)
     chr_prefix_present <- any(grepl("^chr", bim_sample$X1))
