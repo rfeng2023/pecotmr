@@ -83,7 +83,7 @@ jobs:
 
       - name: Setup up docker buildx
         if: ${{ contains(matrix.platform, 'linux') }}
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and export docker containers
         if: ${{ contains(matrix.platform, 'linux') }}
