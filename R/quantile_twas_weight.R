@@ -822,7 +822,8 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
                                           xi_tau_range = seq(0.1, 0.9, by = 0.05),
                                           keep_variants = NULL,
                                           marginal_beta_calculate = TRUE,
-                                          twas_weight_calculate = TRUE) {
+                                          twas_weight_calculate = TRUE,
+                                          qrank_screen_calculate = TRUE) {
   # Step 1: vQTL
   # Step 1-1: Calculate vQTL rank scores
   message("Step 0: Calculating vQTL rank scores for region ", region_id)
@@ -846,81 +847,105 @@ quantile_twas_weight_pipeline <- function(X, Y, Z = NULL, maf = NULL, region_id 
   )
   message("vQTL analysis completed. Proceeding to QR screen.")
 
-  # Step 2: QR screen
-  message("Starting QR screen for region ", region_id)
-  p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, screen_threshold = screen_threshold, screen_method = "qvalue", top_count = 10, top_percent = 15)
-  message(paste0("Number of SNPs after QR screening: ", length(p.screen$sig_SNP_threshold)))
-  message("QR screen completed. Screening significant SNPs")
   # Initialize results list
   results <- list(
-    qr_screen_pvalue_df = p.screen$df_result,
-    vqtl_results = vqtl_results # Include vQTL results
+    vqtl_results = vqtl_results
   )
-  if (screen_significant && length(p.screen$sig_SNP_threshold) == 0) {
-    results$message <- paste0("No significant SNPs detected in region ", region_id)
-    return(results)
-  }
 
-  if (screen_significant) {
-    X_filtered <- X[, p.screen$sig_SNP_threshold, drop = FALSE]
-  } else {
-    X_filtered <- X
-  }
+  if (qrank_screen_calculate) {
+    # Step 2: QR screen
+    message("Starting QR screen for region ", region_id)
+    p.screen <- qr_screen(X = X, Y = Y, Z = Z, tau.list = quantile_qtl_tau_list, screen_threshold = screen_threshold, screen_method = "qvalue", top_count = 10, top_percent = 15)
+    message(paste0("Number of SNPs after QR screening: ", length(p.screen$sig_SNP_threshold)))
+    message("QR screen completed. Screening significant SNPs")
+    results$qr_screen_pvalue_df <- p.screen$df_result
 
-  # # Step 3: Optional LD clumping and pruning from results of QR_screen (using original QR screen results)
-  if (ld_clumping) {
-    message("Performing LD clumping and pruning from QR screen results...")
-    LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = NULL)
-    selected_snps <- if (ld_pruning) LD_SNPs$final_SNPs else LD_SNPs$clumped_SNPs
-    x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, selected_snps, drop = FALSE]
+    if (screen_significant && length(p.screen$sig_SNP_threshold) == 0) {
+      results$message <- paste0("No significant SNPs detected in region ", region_id)
+      return(results)
+    }
+
+    if (screen_significant) {
+      X_filtered <- X[, p.screen$sig_SNP_threshold, drop = FALSE]
+    } else {
+      X_filtered <- X
+    }
+
+    # # Step 3: Optional LD clumping and pruning from results of QR_screen (using original QR screen results)
+    if (ld_clumping) {
+      message("Performing LD clumping and pruning from QR screen results...")
+      LD_SNPs <- multicontext_ld_clumping(X = X[, p.screen$sig_SNP_threshold, drop = FALSE], qr_results = p.screen, maf_list = NULL)
+      selected_snps <- if (ld_pruning) LD_SNPs$final_SNPs else LD_SNPs$clumped_SNPs
+      x_clumped <- X[, p.screen$sig_SNP_threshold, drop = FALSE][, selected_snps, drop = FALSE]
+    } else {
+      message("Skipping LD clumping.")
+    }
+
   } else {
-    message("Skipping LD clumping.")
+    message("Skipping QR screen.")
   }
 
   # Determine whether to skip marginal beta calculation:
   # - skip if marginal_beta_calculate = FALSE
   # - skip if keep_variants is provided but empty (length 0)
+  # - skip if qrank_screen_calculate = FALSE and keep_variants is NULL (no variants to select)
   skip_marginal_beta <- !marginal_beta_calculate ||
-    (!is.null(keep_variants) && length(keep_variants) == 0)
+    (!is.null(keep_variants) && length(keep_variants) == 0) ||
+    (!qrank_screen_calculate && is.null(keep_variants))
 
   if (!skip_marginal_beta) {
-  # Step 4: Fit marginal QR to get beta with SNPs for quantile_qtl_tau_list values
-  message("Fitting marginal QR for selected SNPs...")
-  X_for_qr <- if (ld_clumping) x_clumped else X_filtered
-  if (!is.null(keep_variants)) {
-    variants_to_keep <- intersect(keep_variants, colnames(X_for_qr))
-    if (length(variants_to_keep) > 0) {
-      X_for_qr <- X_for_qr[, variants_to_keep, drop = FALSE]
-      message("Filtered to ", ncol(X_for_qr), " variants from keep_variants list for QR analysis")
+    # Step 4: Fit marginal QR to get beta with SNPs for quantile_qtl_tau_list values
+    message("Fitting marginal QR for selected SNPs...")
+    if (qrank_screen_calculate) {
+      X_for_qr <- if (ld_clumping) x_clumped else X_filtered
+      if (!is.null(keep_variants)) {
+        variants_to_keep <- intersect(keep_variants, colnames(X_for_qr))
+        if (length(variants_to_keep) > 0) {
+          X_for_qr <- X_for_qr[, variants_to_keep, drop = FALSE]
+          message("Filtered to ", ncol(X_for_qr), " variants from keep_variants list for QR analysis")
+        } else {
+          message("Warning: No variants from keep_variants found in selected SNPs, using all selected SNPs")
+        }
+      }
     } else {
-      message("Warning: No variants from keep_variants found in selected SNPs, using all selected SNPs")
+      # qrank_screen_calculate = FALSE but keep_variants provided
+      variants_to_keep <- intersect(keep_variants, colnames(X))
+      if (length(variants_to_keep) > 0) {
+        X_for_qr <- X[, variants_to_keep, drop = FALSE]
+        message("Using ", ncol(X_for_qr), " variants from keep_variants list for QR analysis (QR screen skipped)")
+      } else {
+        message("Warning: No variants from keep_variants found in X, skipping marginal beta calculation")
+        skip_marginal_beta <- TRUE
+      }
     }
   }
-  rq_coef_result <- perform_qr_analysis(X = X_for_qr, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
 
-  # Step 5: Heterogeneity calculation
-  # Step 5-1: beta_heterogeneity index in marginal model
-  message("Marginal QR for selected SNPs completed. Calculating beta heterogeneity...")
-  beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
-  message("Beta heterogeneity calculation completed.")
+  if (!skip_marginal_beta) {
+    rq_coef_result <- perform_qr_analysis(X = X_for_qr, Y = Y, Z = Z, tau_values = quantile_qtl_tau_list)
 
-  # Step 5-2: Calculate xi correlation (Chatterjee correlation test) 
-  message("Calculating xi correlation for QR coefficients...")
-  xi_correlation <- calculate_xi_correlation(rq_coef_result, tau_range = xi_tau_range, min_valid = 10)
-  message("Xi correlation calculation completed.")
+    # Step 5: Heterogeneity calculation
+    # Step 5-1: beta_heterogeneity index in marginal model
+    message("Marginal QR for selected SNPs completed. Calculating beta heterogeneity...")
+    beta_heterogeneity <- calculate_coef_heterogeneity(rq_coef_result)
+    message("Beta heterogeneity calculation completed.")
 
-  # Merge xi and xi_pval into rq_coef_result (using left_join to preserve row order)
-  rq_coef_result <- rq_coef_result %>%
-    dplyr::left_join(xi_correlation, by = "variant_id")
+    # Step 5-2: Calculate xi correlation (Chatterjee correlation test)
+    message("Calculating xi correlation for QR coefficients...")
+    xi_correlation <- calculate_xi_correlation(rq_coef_result, tau_range = xi_tau_range, min_valid = 10)
+    message("Xi correlation calculation completed.")
 
-  results$rq_coef_df <- rq_coef_result
-  results$beta_heterogeneity <- beta_heterogeneity
+    # Merge xi and xi_pval into rq_coef_result (using left_join to preserve row order)
+    rq_coef_result <- rq_coef_result %>%
+      dplyr::left_join(xi_correlation, by = "variant_id")
+
+    results$rq_coef_df <- rq_coef_result
+    results$beta_heterogeneity <- beta_heterogeneity
     results$xi_correlation <- xi_correlation
   } else {
     message("Skipping marginal beta calculation and heterogeneity analysis.")
   }
 
-  if (twas_weight_calculate) {
+  if (twas_weight_calculate && qrank_screen_calculate) {
   # Step 6: Optional LD panel filtering and MAF filtering from results of QR_screen
   if (!is.null(ld_reference_meta_file)) {
     message("Starting LD panel filtering...")
