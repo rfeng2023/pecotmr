@@ -21,7 +21,8 @@ quantile_twas_weight_pipeline(
   xi_tau_range = seq(0.1, 0.9, by = 0.05),
   keep_variants = NULL,
   marginal_beta_calculate = TRUE,
-  twas_weight_calculate = TRUE
+  twas_weight_calculate = TRUE,
+  qrank_screen_calculate = TRUE
 )
 }
 \arguments{
