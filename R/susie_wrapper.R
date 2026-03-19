@@ -324,19 +324,6 @@ get_cs_info <- function(susie_output_sets_cs, top_variants_idx) {
   do.call(rbind, rows)
 }
 #' @noRd
-#' Lookup a variant's CS number at a secondary coverage level.
-#' If in multiple CSs, prefer the one matching prefer_cs (the primary CS).
-lookup_cs <- function(vi, susie_cs, prefer_cs = NULL) {
-  cs_names <- names(susie_cs)
-  in_cs <- vapply(susie_cs, function(x) vi %in% x, logical(1))
-  idx <- which(in_cs)
-  if (length(idx) == 0) return(0L)
-  L_nums <- as.integer(str_replace(cs_names[idx], "L", ""))
-  if (!is.null(prefer_cs) && prefer_cs %in% L_nums) return(prefer_cs)
-  return(L_nums[1])
-}
-
-#' @noRd
 get_cs_and_corr <- function(susie_output, coverage, data_x, mode = c("susie", "susie_rss", "mvsusie"), min_abs_corr = NULL) {
   if (mode %in% c("susie", "mvsusie")) {
     susie_output_secondary <- list(sets = susie_get_cs(susie_output, X = data_x, coverage = coverage, min_abs_corr = min_abs_corr), pip = susie_output$pip)
@@ -427,21 +414,31 @@ susie_post_processor <- function(susie_output, data_x, data_y, X_scalar, y_scala
   if (length(eff_idx) > 0) {
     # Prepare for top loci table
     top_variants_idx_pri <- get_top_variants_idx(susie_output, signal_cutoff)
-    # get_cs_info now returns data.frame(variant_idx, cs_idx) with one row per (variant, CS) pair
-    top_loci <- get_cs_info(susie_output$sets$cs, top_variants_idx_pri)
-    if (is.null(top_loci)) top_loci <- data.frame(variant_idx = integer(0), cs_idx = integer(0))
+    # get_cs_info returns data.frame(variant_idx, cs_idx) with one row per (variant, CS) pair
+    top_loci_pri <- get_cs_info(susie_output$sets$cs, top_variants_idx_pri)
+    if (is.null(top_loci_pri)) top_loci_pri <- data.frame(variant_idx = integer(0), cs_idx = integer(0))
     susie_output$cs_corr <- if (mode %in% c("susie", "mvsusie")) get_cs_correlation(susie_output, X = data_x) else get_cs_correlation(susie_output, Xcorr = data_x)
-    names(top_loci)[2] <- "cs_coverage_0.95"
+    top_loci_list <- list("coverage_0.95" = top_loci_pri)
 
-    ## Secondary coverages: lookup per row to avoid many-to-many join
+    ## Loop over each secondary coverage value independently
     sets_secondary <- list()
     if (!is.null(secondary_coverage) && length(secondary_coverage)) {
       for (sec_cov in secondary_coverage) {
         sets_secondary[[paste0("coverage_", sec_cov)]] <- get_cs_and_corr(susie_output, sec_cov, data_x, mode, min_abs_corr)
-        sec_cs <- sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs
-        col_name <- paste0("cs_coverage_", sec_cov)
-        top_loci[[col_name]] <- mapply(function(vi, pcs) lookup_cs(vi, sec_cs, prefer_cs = pcs),
-                                        top_loci$variant_idx, top_loci$cs_coverage_0.95)
+        top_variants_idx_sec <- get_top_variants_idx(sets_secondary[[paste0("coverage_", sec_cov)]], signal_cutoff)
+        top_loci_sec <- get_cs_info(sets_secondary[[paste0("coverage_", sec_cov)]]$sets$cs, top_variants_idx_sec)
+        if (is.null(top_loci_sec)) top_loci_sec <- data.frame(variant_idx = integer(0), cs_idx = integer(0))
+        top_loci_list[[paste0("coverage_", sec_cov)]] <- top_loci_sec
+      }
+    }
+
+    # Merge coverage tables via full_join
+    names(top_loci_list[[1]])[2] <- paste0("cs_", names(top_loci_list)[1])
+    top_loci <- top_loci_list[[1]]
+    if (length(top_loci_list) > 1) {
+      for (i in 2:length(top_loci_list)) {
+        names(top_loci_list[[i]])[2] <- paste0("cs_", names(top_loci_list)[i])
+        top_loci <- dplyr::full_join(top_loci, top_loci_list[[i]], by = "variant_idx")
       }
     }
 
